@@ -1,0 +1,38 @@
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# IDE/editor settings
+.idea/
+.vscode/
+
+# Logs and local env
+*.log
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local databases
+*.db
+Bend/data/*.db
+
+# Generated images/assets
+Bend/static/textures/generated_*.png
+Bend/static/textures/preprocessed_*.png
+

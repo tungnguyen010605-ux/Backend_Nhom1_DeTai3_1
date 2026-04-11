@@ -1,6 +1,17 @@
 from pydantic import BaseModel, Field
 
 
+class PoseKeypointPayload(BaseModel):
+    index: int
+    name: str = Field(min_length=1, max_length=50)
+    x: float
+    y: float
+    z: float
+    pixel_x: int
+    pixel_y: int
+    visibility: float | None = None
+
+
 class UserCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     height_cm: float = Field(gt=50, lt=260)
@@ -25,6 +36,7 @@ class BodyMeasurementCreate(BaseModel):
     hip_cm: float = Field(gt=30, lt=220)
     inseam_cm: float = Field(gt=20, lt=150)
     source: str = Field(default="mediapipe", min_length=2, max_length=50)
+    keypoints: list[PoseKeypointPayload] | None = None
 
 
 class BodyMeasurementResponse(BodyMeasurementCreate):
@@ -60,6 +72,23 @@ class BodyData(BaseModel):
     arm_length_cm: float
 
 
+class PoseMeasurementEstimate(BaseModel):
+    height_cm: float
+    chest_cm: float
+    waist_cm: float
+    hip_cm: float
+    inseam_cm: float
+    shoulder_cm: float
+    arm_length_cm: float
+
+
+class PoseEstimateResponse(BaseModel):
+    image_width: int
+    image_height: int
+    keypoints: list[PoseKeypointPayload]
+    measurements: PoseMeasurementEstimate
+
+
 class TaskCreateRequest(BaseModel):
     user_id: int
     clothing_item_id: int
@@ -71,4 +100,3 @@ class TaskStatus(BaseModel):
     progress: int = Field(ge=0, le=100)
     message: str
     output_url: str | None = None
-

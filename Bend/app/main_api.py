@@ -1,5 +1,6 @@
 from io import BytesIO
 from pathlib import Path
+import sys
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
@@ -8,22 +9,44 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from sqlalchemy.orm import Session
 
-from .database import Base, SessionLocal, engine, get_db
-from .models import BodyMeasurement, ClothingItem, UserProfile
-from .schemas import (
-    BodyData,
-    BodyMeasurementCreate,
-    BodyMeasurementResponse,
-    ClothingItemCreate,
-    ClothingItemResponse,
-    TaskCreateRequest,
-    TaskStatus,
-    UserCreate,
-    UserResponse,
-)
-from .services.mock_vr import build_mock_body_data
-from .services.preprocess import preprocess_image_bytes
-from .services.tasks import TaskManager
+try:
+    from .database import Base, SessionLocal, engine, get_db
+    from .models import BodyMeasurement, ClothingItem, UserProfile
+    from .schemas import (
+        BodyData,
+        BodyMeasurementCreate,
+        BodyMeasurementResponse,
+        ClothingItemCreate,
+        ClothingItemResponse,
+        TaskCreateRequest,
+        TaskStatus,
+        UserCreate,
+        UserResponse,
+    )
+    from .services.mock_vr import build_mock_body_data
+    from .services.preprocess import preprocess_image_bytes
+    from .services.tasks import TaskManager
+except ImportError:
+    project_root = Path(__file__).resolve().parents[2]
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
+    from Bend.app.database import Base, SessionLocal, engine, get_db
+    from Bend.app.models import BodyMeasurement, ClothingItem, UserProfile
+    from Bend.app.schemas import (
+        BodyData,
+        BodyMeasurementCreate,
+        BodyMeasurementResponse,
+        ClothingItemCreate,
+        ClothingItemResponse,
+        TaskCreateRequest,
+        TaskStatus,
+        UserCreate,
+        UserResponse,
+    )
+    from Bend.app.services.mock_vr import build_mock_body_data
+    from Bend.app.services.preprocess import preprocess_image_bytes
+    from Bend.app.services.tasks import TaskManager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = BASE_DIR.parent

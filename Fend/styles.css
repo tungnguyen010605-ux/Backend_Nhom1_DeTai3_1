@@ -24,6 +24,12 @@ h1 {
   color: #4b5563;
 }
 
+.hint.small {
+  margin-top: 10px;
+  margin-bottom: 0;
+  font-size: 13px;
+}
+
 .card {
   background: #fff;
   border: 1px solid #e5e7eb;
@@ -66,6 +72,18 @@ select {
   padding: 8px;
 }
 
+select:disabled,
+input:disabled {
+  background: #eef2f7;
+  color: #64748b;
+  cursor: not-allowed;
+}
+
+input[readonly] {
+  background: #f8fafc;
+  color: #334155;
+}
+
 button {
   border: none;
   border-radius: 10px;
@@ -97,5 +115,10 @@ button:disabled {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   display: none;
+}
+
+#existing-clothing-group,
+#existing-user-group {
+  margin-bottom: 12px;
 }
 

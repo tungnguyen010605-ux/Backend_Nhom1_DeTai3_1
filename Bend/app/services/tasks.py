@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from PIL import Image, ImageDraw
 
-from app.schemas import TaskStatus
+from ..schemas import TaskStatus
 
 
 class TaskManager:

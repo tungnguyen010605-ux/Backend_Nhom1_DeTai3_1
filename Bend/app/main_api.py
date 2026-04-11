@@ -8,9 +8,9 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from sqlalchemy.orm import Session
 
-from app.database import Base, SessionLocal, engine, get_db
-from app.models import BodyMeasurement, ClothingItem, UserProfile
-from app.schemas import (
+from .database import Base, SessionLocal, engine, get_db
+from .models import BodyMeasurement, ClothingItem, UserProfile
+from .schemas import (
     BodyData,
     BodyMeasurementCreate,
     BodyMeasurementResponse,
@@ -21,9 +21,9 @@ from app.schemas import (
     UserCreate,
     UserResponse,
 )
-from app.services.mock_vr import build_mock_body_data
-from app.services.preprocess import preprocess_image_bytes
-from app.services.tasks import TaskManager
+from .services.mock_vr import build_mock_body_data
+from .services.preprocess import preprocess_image_bytes
+from .services.tasks import TaskManager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = BASE_DIR.parent

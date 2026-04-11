@@ -17,6 +17,23 @@ class UserResponse(UserCreate):
         from_attributes = True
 
 
+class BodyMeasurementCreate(BaseModel):
+    user_id: int
+    height_cm: float = Field(gt=50, lt=260)
+    chest_cm: float = Field(gt=30, lt=200)
+    waist_cm: float = Field(gt=30, lt=200)
+    hip_cm: float = Field(gt=30, lt=220)
+    inseam_cm: float = Field(gt=20, lt=150)
+    source: str = Field(default="mediapipe", min_length=2, max_length=50)
+
+
+class BodyMeasurementResponse(BodyMeasurementCreate):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
 class ClothingItemCreate(BaseModel):
     user_id: int
     category: str = Field(min_length=2, max_length=50)

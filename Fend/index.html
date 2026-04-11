@@ -1,87 +1,102 @@
 <!doctype html>
-<html lang="en">
+<html lang="vi">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Virtual Try-On Demo</title>
-  <link rel="stylesheet" href="/ui/static/styles.css" />
+  <title>Thử đồ ảo - CPU Friendly</title>
+  <link rel="stylesheet" href="/ui/static/styles.css?v=3" />
 </head>
 <body>
   <main class="container">
-    <h1>Virtual Try-On (CPU Friendly)</h1>
-    <p class="hint">Enter body measurements and upload a clothing image.</p>
+    <h1>Thử đồ ảo (tối ưu cho CPU)</h1>
+    <p class="hint">Chọn user đã có hoặc tạo user mới, sau đó chọn bất kỳ clothing item nào đang có trong database hoặc thêm item mới.</p>
 
     <form id="tryon-form">
       <section class="card">
-        <h2>User Profile</h2>
+        <h2>Thông tin người dùng</h2>
         <div class="mode-row">
-          <label><input type="radio" name="user_mode" value="existing" checked /> Use existing user</label>
-          <label><input type="radio" name="user_mode" value="new" /> Create new user</label>
-          <button type="button" id="refresh-users">Refresh users</button>
+          <label><input type="radio" name="user_mode" value="existing" checked /> Dùng user đã có</label>
+          <label><input type="radio" name="user_mode" value="new" /> Tạo user mới</label>
+          <button type="button" id="refresh-users">Tải lại danh sách user</button>
         </div>
         <div class="grid" id="existing-user-group">
-          <label class="full">Existing user
+          <label class="full">Chọn user đã có
             <select name="existing_user_id" id="existing-user-select"></select>
           </label>
         </div>
         <div class="grid">
-          <label>Name <input name="name" type="text" maxlength="100" /></label>
-          <label>Height (cm) <input name="height_cm" type="number" step="0.1" min="50" max="260" /></label>
-          <label>Chest (cm) <input name="chest_cm" type="number" step="0.1" min="30" max="200" /></label>
-          <label>Waist (cm) <input name="waist_cm" type="number" step="0.1" min="30" max="200" /></label>
-          <label>Hip (cm) <input name="hip_cm" type="number" step="0.1" min="30" max="220" /></label>
-          <label>Inseam (cm) <input name="inseam_cm" type="number" step="0.1" min="20" max="150" /></label>
+          <label>Tên <input name="name" type="text" maxlength="100" /></label>
+          <label>Chiều cao (cm) <input name="height_cm" type="number" step="0.1" min="50" max="260" /></label>
+          <label>Vòng ngực (cm) <input name="chest_cm" type="number" step="0.1" min="30" max="200" /></label>
+          <label>Vòng eo (cm) <input name="waist_cm" type="number" step="0.1" min="30" max="200" /></label>
+          <label>Vòng hông (cm) <input name="hip_cm" type="number" step="0.1" min="30" max="220" /></label>
+          <label>Dài ống trong (cm) <input name="inseam_cm" type="number" step="0.1" min="20" max="150" /></label>
         </div>
+        <p class="hint small">Lưu ý: ở luồng thực tế, camera + MediaPipe sẽ tự động gửi số đo cơ thể về backend.</p>
       </section>
 
       <section class="card">
-        <h2>Clothing Input</h2>
+        <h2>Thông tin quần áo</h2>
         <div class="mode-row">
-          <label><input type="radio" name="clothing_mode" value="existing" checked /> Use existing clothing item</label>
-          <label><input type="radio" name="clothing_mode" value="new" /> Create new clothing item</label>
-          <button type="button" id="refresh-clothing">Refresh clothing</button>
+          <label><input type="radio" name="clothing_mode" value="existing" checked /> Chọn item có sẵn</label>
+          <label><input type="radio" name="clothing_mode" value="new" /> Tạo clothing item mới</label>
+          <button type="button" id="refresh-clothing">Tải lại danh sách quần áo</button>
+          <button type="button" id="auto-pick-clothing">Tự chọn item phù hợp</button>
         </div>
         <div class="grid" id="existing-clothing-group">
-          <label class="full">Existing clothing item (filtered by selected user)
+          <label class="full">Chọn clothing item có sẵn trong database (không giới hạn theo user)
             <select name="existing_clothing_id" id="existing-clothing-select"></select>
           </label>
         </div>
         <div class="grid">
-          <label>Category <input name="category" type="text" value="shirt" minlength="2" maxlength="50" /></label>
-          <label>Size <input name="size_label" type="text" value="M" maxlength="20" /></label>
-          <label>Color <input name="color" type="text" value="blue" maxlength="30" /></label>
-          <label class="full">Clothing image (PNG/JPG)
-            <input name="file" type="file" accept="image/png,image/jpeg" />
+          <label>Nhóm category
+            <select name="category_group" id="category-group-select"></select>
+          </label>
+          <label>Loại quần áo
+            <select name="category_type" id="category-type-select"></select>
+          </label>
+          <label>Size
+            <select name="size_label" id="size-select"></select>
+          </label>
+          <label>Màu sắc
+            <select name="color" id="color-select"></select>
+          </label>
+          <label>Image path (từ DB)
+            <input name="image_path_preview" id="image-path-preview" type="text" readonly />
+          </label>
+          <label class="full">Ảnh quần áo (PNG/JPG)
+            <input name="file" id="clothing-file" type="file" accept="image/png,image/jpeg" />
           </label>
         </div>
+        <p class="hint small">Khi chọn item có sẵn, hệ thống sẽ tự điền category, size, color và ảnh từ database. Khi tạo item mới, bạn có thể chọn từ dropdown áo/quần, size và màu.</p>
       </section>
 
       <section class="card">
-        <h2>Preprocess Settings</h2>
+        <h2>Thiết lập tiền xử lý</h2>
         <div class="grid">
           <label>Width <input required name="width" type="number" value="512" min="64" max="1024" /></label>
           <label>Height <input required name="height" type="number" value="512" min="64" max="1024" /></label>
-          <label><input name="normalize" type="checkbox" checked /> Normalize</label>
-          <label><input name="augment" type="checkbox" /> Augment (optional)</label>
+          <label><input name="normalize" type="checkbox" checked /> Chuẩn hoá</label>
+          <label><input name="augment" type="checkbox" /> Augment (tuỳ chọn)</label>
         </div>
       </section>
 
-      <button id="submit-btn" type="submit">Run Try-On Flow</button>
+      <button id="submit-btn" type="submit">Chạy luồng thử đồ</button>
     </form>
 
     <section class="card">
-      <h2>Status</h2>
+      <h2>Trạng thái</h2>
       <pre id="status-log">Ready.</pre>
     </section>
 
     <section class="card">
-      <h2>Result</h2>
-      <p id="result-link">No result yet.</p>
-      <img id="result-image" alt="Generated texture" />
+      <h2>Kết quả</h2>
+      <p id="result-link">Chưa có kết quả.</p>
+      <img id="result-image" alt="Ảnh texture được tạo" />
     </section>
   </main>
 
-  <script src="/ui/static/app.js"></script>
+  <script src="/ui/static/app.js?v=3"></script>
 </body>
 </html>
 

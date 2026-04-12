@@ -10,6 +10,13 @@ const existingClothingGroup = document.getElementById("existing-clothing-group")
 const refreshUsersBtn = document.getElementById("refresh-users");
 const refreshClothingBtn = document.getElementById("refresh-clothing");
 const autoPickClothingBtn = document.getElementById("auto-pick-clothing");
+const startCameraBtn = document.getElementById("start-camera-btn");
+const stopCameraBtn = document.getElementById("stop-camera-btn");
+const capturePoseBtn = document.getElementById("capture-pose-btn");
+const poseVideo = document.getElementById("pose-video");
+const poseCanvas = document.getElementById("pose-canvas");
+const poseStatus = document.getElementById("pose-status");
+const poseSummary = document.getElementById("pose-summary");
 
 const categoryGroupSelect = document.getElementById("category-group-select");
 const categoryTypeSelect = document.getElementById("category-type-select");
@@ -61,6 +68,17 @@ const SIZE_RANK = { S: 1, M: 2, L: 3, XL: 4, XXL: 5 };
 
 let usersCache = [];
 let clothingCache = [];
+let activeCameraStream = null;
+let latestPoseEstimate = null;
+
+const measurementInputs = {
+  name: form.querySelector('input[name="name"]'),
+  height_cm: form.querySelector('input[name="height_cm"]'),
+  chest_cm: form.querySelector('input[name="chest_cm"]'),
+  waist_cm: form.querySelector('input[name="waist_cm"]'),
+  hip_cm: form.querySelector('input[name="hip_cm"]'),
+  inseam_cm: form.querySelector('input[name="inseam_cm"]'),
+};
 
 function log(message) {
   statusLog.textContent += `\n${message}`;
@@ -71,6 +89,29 @@ function resetUi() {
   resultLink.textContent = "No result yet.";
   resultImage.style.display = "none";
   resultImage.removeAttribute("src");
+}
+
+function setPoseStatus(message) {
+  poseStatus.textContent = message;
+}
+
+function updatePoseSummary(estimate) {
+  if (!estimate) {
+    poseSummary.textContent = "Chưa có keypoints.";
+    return;
+  }
+
+  const m = estimate.measurements;
+  poseSummary.textContent = [
+    `Keypoints: ${estimate.keypoints.length}`,
+    `Height: ${m.height_cm} cm`,
+    `Chest: ${m.chest_cm} cm`,
+    `Waist: ${m.waist_cm} cm`,
+    `Hip: ${m.hip_cm} cm`,
+    `Inseam: ${m.inseam_cm} cm`,
+    `Shoulder: ${m.shoulder_cm} cm`,
+    `Arm length: ${m.arm_length_cm} cm`,
+  ].join("\n");
 }
 
 function selectedMode(name) {
@@ -162,6 +203,18 @@ function initializeDropdowns() {
   colorSelect.value = "blue";
 }
 
+function fillUserMeasurementFields(user) {
+  if (!user) {
+    return;
+  }
+  measurementInputs.name.value = user.name || "";
+  measurementInputs.height_cm.value = user.height_cm ?? "";
+  measurementInputs.chest_cm.value = user.chest_cm ?? "";
+  measurementInputs.waist_cm.value = user.waist_cm ?? "";
+  measurementInputs.hip_cm.value = user.hip_cm ?? "";
+  measurementInputs.inseam_cm.value = user.inseam_cm ?? "";
+}
+
 function setClothingInputState(isExistingMode) {
   categoryGroupSelect.disabled = isExistingMode;
   categoryTypeSelect.disabled = isExistingMode;
@@ -248,6 +301,11 @@ async function loadUsers() {
     usersCache.map((u) => ({ value: u.id, label: `#${u.id} - ${u.name}` })),
     "Không có user. Chuyển sang tạo user mới.",
   );
+
+  if (usersCache.length > 0 && !existingUserSelect.value) {
+    existingUserSelect.value = String(usersCache[0].id);
+    fillUserMeasurementFields(usersCache[0]);
+  }
 }
 
 async function loadClothing() {
@@ -275,6 +333,116 @@ function requireNumber(formData, name, message) {
     throw new Error(message);
   }
   return value;
+}
+
+function requireHeightReference() {
+  const height = Number(measurementInputs.height_cm.value);
+  if (!Number.isFinite(height) || height <= 50) {
+    throw new Error("Hãy nhập chiều cao thật trước khi chụp pose");
+  }
+  return height;
+}
+
+async function startCamera() {
+  if (activeCameraStream) {
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    throw new Error("Trình duyệt hiện tại không hỗ trợ webcam");
+  }
+
+  activeCameraStream = await navigator.mediaDevices.getUserMedia({
+    video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" },
+    audio: false,
+  });
+  poseVideo.srcObject = activeCameraStream;
+  await poseVideo.play();
+  setPoseStatus("Camera đang bật. Đứng thẳng trong khung hình rồi bấm chụp pose.");
+}
+
+function stopCamera() {
+  if (!activeCameraStream) {
+    setPoseStatus("Camera đã tắt.");
+    return;
+  }
+  activeCameraStream.getTracks().forEach((track) => track.stop());
+  activeCameraStream = null;
+  poseVideo.srcObject = null;
+  setPoseStatus("Camera đã tắt.");
+}
+
+function applyPoseMeasurementsToForm(measurements) {
+  measurementInputs.height_cm.value = measurements.height_cm;
+  measurementInputs.chest_cm.value = measurements.chest_cm;
+  measurementInputs.waist_cm.value = measurements.waist_cm;
+  measurementInputs.hip_cm.value = measurements.hip_cm;
+  measurementInputs.inseam_cm.value = measurements.inseam_cm;
+}
+
+async function capturePoseEstimate() {
+  if (!activeCameraStream) {
+    await startCamera();
+  }
+
+  const referenceHeight = requireHeightReference();
+  const width = poseVideo.videoWidth || 640;
+  const height = poseVideo.videoHeight || 480;
+
+  poseCanvas.width = width;
+  poseCanvas.height = height;
+  const ctx = poseCanvas.getContext("2d");
+  ctx.drawImage(poseVideo, 0, 0, width, height);
+
+  const blob = await new Promise((resolve, reject) => {
+    poseCanvas.toBlob((value) => {
+      if (value) {
+        resolve(value);
+      } else {
+        reject(new Error("Không thể tạo ảnh từ webcam"));
+      }
+    }, "image/jpeg", 0.92);
+  });
+
+  const payload = new FormData();
+  payload.append("file", blob, "pose-capture.jpg");
+  payload.append("reference_height_cm", String(referenceHeight));
+
+  setPoseStatus("Đang gửi frame lên backend để ước lượng pose...");
+  const estimate = await apiJson("/pose/estimate", {
+    method: "POST",
+    body: payload,
+  });
+
+  latestPoseEstimate = estimate;
+  applyPoseMeasurementsToForm(estimate.measurements);
+  updatePoseSummary(estimate);
+  setPoseStatus("Đã nhận keypoints và tự điền số đo vào form.");
+  log(`Pose estimated with ${estimate.keypoints.length} keypoints.`);
+}
+
+async function persistPoseMeasurementIfAvailable(userId, formData) {
+  if (!latestPoseEstimate) {
+    return;
+  }
+
+  const payload = {
+    user_id: userId,
+    height_cm: requireNumber(formData, "height_cm", "Please enter valid height"),
+    chest_cm: requireNumber(formData, "chest_cm", "Please enter valid chest"),
+    waist_cm: requireNumber(formData, "waist_cm", "Please enter valid waist"),
+    hip_cm: requireNumber(formData, "hip_cm", "Please enter valid hip"),
+    inseam_cm: requireNumber(formData, "inseam_cm", "Please enter valid inseam"),
+    source: "mediapipe_ui",
+    keypoints: latestPoseEstimate.keypoints,
+  };
+
+  log("2) Saving pose measurement to database...");
+  await apiJson("/body-measurements", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  log("Pose measurement saved.");
 }
 
 async function resolveUserId(formData) {
@@ -341,7 +509,7 @@ async function resolveClothingId(formData, userId) {
   const normalize = formData.get("normalize") === "on";
   const augment = formData.get("augment") === "on";
 
-  log("2) Preprocessing clothing image...");
+  log("3) Preprocessing clothing image...");
   const imageForm = new FormData();
   imageForm.append("file", file);
   const preprocess = await apiJson(
@@ -362,7 +530,7 @@ async function resolveClothingId(formData, userId) {
     image_path: preprocess.file_url,
   };
 
-  log("3) Creating clothing item...");
+  log("4) Creating clothing item...");
   const cloth = await apiJson("/clothing-items", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -429,9 +597,10 @@ async function runFlow(event) {
   try {
     const formData = new FormData(form);
     const userId = await resolveUserId(formData);
+    await persistPoseMeasurementIfAvailable(userId, formData);
     const clothingId = await resolveClothingId(formData, userId);
 
-    log("4) Starting texture generation task...");
+    log("5) Starting texture generation task...");
     const task = await apiJson("/tasks/generate-texture", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -440,7 +609,7 @@ async function runFlow(event) {
 
     log(`Task queued: task_id=${task.task_id}`);
 
-    log("5) Polling task status...");
+    log("6) Polling task status...");
     const completed = await pollTask(task.task_id);
 
     const absoluteUrl = `${window.location.origin}${completed.output_url}`;
@@ -480,8 +649,33 @@ existingClothingSelect.addEventListener("change", () => {
 
 existingUserSelect.addEventListener("change", async () => {
   try {
+    const selectedId = Number(existingUserSelect.value);
+    const user = usersCache.find((entry) => entry.id === selectedId);
+    fillUserMeasurementFields(user);
     log(`Selected existing user #${existingUserSelect.value}. Clothing catalog remains global across all users.`);
   } catch (error) {
+    log(`Error: ${error instanceof Error ? error.message : String(error)}`);
+  }
+});
+
+startCameraBtn.addEventListener("click", async () => {
+  try {
+    await startCamera();
+  } catch (error) {
+    setPoseStatus(`Lỗi camera: ${error instanceof Error ? error.message : String(error)}`);
+    log(`Error: ${error instanceof Error ? error.message : String(error)}`);
+  }
+});
+
+stopCameraBtn.addEventListener("click", () => {
+  stopCamera();
+});
+
+capturePoseBtn.addEventListener("click", async () => {
+  try {
+    await capturePoseEstimate();
+  } catch (error) {
+    setPoseStatus(`Lỗi pose: ${error instanceof Error ? error.message : String(error)}`);
     log(`Error: ${error instanceof Error ? error.message : String(error)}`);
   }
 });
@@ -519,6 +713,9 @@ async function initialize() {
   try {
     await loadUsers();
     await loadClothing();
+    if (usersCache.length > 0) {
+      fillUserMeasurementFields(usersCache[0]);
+    }
   } catch (error) {
     log(`Error: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -526,3 +723,6 @@ async function initialize() {
 
 initialize();
 
+window.addEventListener("beforeunload", () => {
+  stopCamera();
+});

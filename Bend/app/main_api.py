@@ -1,8 +1,10 @@
+import json
 from io import BytesIO
 from pathlib import Path
 import sys
 from uuid import uuid4
 
+from sqlalchemy import text
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,12 +20,14 @@ try:
         BodyMeasurementResponse,
         ClothingItemCreate,
         ClothingItemResponse,
+        PoseEstimateResponse,
         TaskCreateRequest,
         TaskStatus,
         UserCreate,
         UserResponse,
     )
     from .services.mock_vr import build_mock_body_data
+    from .services.pose_estimation import estimate_pose_from_image_bytes
     from .services.preprocess import preprocess_image_bytes
     from .services.tasks import TaskManager
 except ImportError:
@@ -39,12 +43,14 @@ except ImportError:
         BodyMeasurementResponse,
         ClothingItemCreate,
         ClothingItemResponse,
+        PoseEstimateResponse,
         TaskCreateRequest,
         TaskStatus,
         UserCreate,
         UserResponse,
     )
     from Bend.app.services.mock_vr import build_mock_body_data
+    from Bend.app.services.pose_estimation import estimate_pose_from_image_bytes
     from Bend.app.services.preprocess import preprocess_image_bytes
     from Bend.app.services.tasks import TaskManager
 
@@ -111,6 +117,18 @@ def persist_task_output(user_id: int, clothing_item_id: int, output_url: str) ->
         db.close()
 
 
+def _ensure_sqlite_column(table_name: str, column_name: str, column_sql: str) -> None:
+    with engine.begin() as connection:
+        if connection.dialect.name != "sqlite":
+            return
+        existing_columns = {
+            row[1]
+            for row in connection.execute(text(f"PRAGMA table_info({table_name})"))
+        }
+        if column_name not in existing_columns:
+            connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}"))
+
+
 task_manager = TaskManager(
     output_dir=TEXTURE_DIR,
     max_concurrent_jobs=2,
@@ -121,6 +139,7 @@ task_manager = TaskManager(
 @app.on_event("startup")
 def on_startup() -> None:
     Base.metadata.create_all(bind=engine)
+    _ensure_sqlite_column("body_measurements", "keypoints_json", "TEXT")
 
 
 @app.get("/health")
@@ -153,6 +172,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db)) -> UserProfi
         hip_cm=user.hip_cm,
         inseam_cm=user.inseam_cm,
         source="user_create",
+        keypoints_json=None,
     )
     db.add(measurement)
     db.commit()
@@ -182,7 +202,12 @@ def create_body_measurement(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    measurement = BodyMeasurement(**payload.model_dump())
+    measurement = BodyMeasurement(**payload.model_dump(exclude={"keypoints"}))
+    measurement.keypoints_json = (
+        json.dumps([point.model_dump() for point in payload.keypoints], ensure_ascii=True)
+        if payload.keypoints
+        else None
+    )
     db.add(measurement)
 
     user.height_cm = payload.height_cm
@@ -284,6 +309,28 @@ def mock_vr_body_data(user_id: int, db: Session = Depends(get_db)) -> BodyData:
         waist_cm=source.waist_cm,
         hip_cm=source.hip_cm,
         inseam_cm=source.inseam_cm,
+    )
+
+
+@app.post("/pose/estimate", response_model=PoseEstimateResponse)
+async def estimate_pose(
+    file: UploadFile = File(...),
+    reference_height_cm: float = Form(...),
+) -> PoseEstimateResponse:
+    content = await file.read()
+    try:
+        frame_result, measurement_estimate = estimate_pose_from_image_bytes(
+            file_bytes=content,
+            reference_height_cm=reference_height_cm,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return PoseEstimateResponse(
+        image_width=frame_result.image_width,
+        image_height=frame_result.image_height,
+        keypoints=[point.to_dict() for point in frame_result.keypoints],
+        measurements=measurement_estimate.to_dict(),
     )
 
 

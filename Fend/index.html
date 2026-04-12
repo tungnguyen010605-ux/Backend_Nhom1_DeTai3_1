@@ -32,7 +32,25 @@
           <label>Vòng hông (cm) <input name="hip_cm" type="number" step="0.1" min="30" max="220" /></label>
           <label>Dài ống trong (cm) <input name="inseam_cm" type="number" step="0.1" min="20" max="150" /></label>
         </div>
-        <p class="hint small">Lưu ý: ở luồng thực tế, camera + MediaPipe sẽ tự động gửi số đo cơ thể về backend.</p>
+        <p class="hint small">Bạn có thể nhập tay, hoặc bật camera bên dưới để MediaPipe tự ước lượng số đo rồi lưu vào backend.</p>
+      </section>
+
+      <section class="card">
+        <h2>Pose Estimation</h2>
+        <p class="hint">Nhập chiều cao thật trước, sau đó bật camera và chụp một frame đứng thẳng để ước lượng số đo cơ thể.</p>
+        <div class="mode-row">
+          <button type="button" id="start-camera-btn">Bật camera</button>
+          <button type="button" id="stop-camera-btn">Tắt camera</button>
+          <button type="button" id="capture-pose-btn">Chụp pose và điền số đo</button>
+        </div>
+        <div class="camera-layout">
+          <video id="pose-video" playsinline autoplay muted></video>
+          <canvas id="pose-canvas" hidden></canvas>
+          <div class="pose-side">
+            <p id="pose-status" class="hint small">Camera chưa bật.</p>
+            <pre id="pose-summary">Chưa có keypoints.</pre>
+          </div>
+        </div>
       </section>
 
       <section class="card">
@@ -99,4 +117,3 @@
   <script src="/ui/static/app.js?v=3"></script>
 </body>
 </html>
-

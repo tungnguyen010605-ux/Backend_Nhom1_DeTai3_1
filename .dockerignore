@@ -1,0 +1,17 @@
+.git
+.idea
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+Dockerfile
+.dockerignore
+docker-compose.yml
+Bend/app/__pycache__
+app/__pycache__
+Bend/data/
+Bend/static/textures/

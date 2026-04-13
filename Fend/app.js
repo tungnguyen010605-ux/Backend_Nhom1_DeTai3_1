@@ -9,9 +9,76 @@ const existingUserGroup = document.getElementById("existing-user-group");
 const existingClothingGroup = document.getElementById("existing-clothing-group");
 const refreshUsersBtn = document.getElementById("refresh-users");
 const refreshClothingBtn = document.getElementById("refresh-clothing");
+const autoPickClothingBtn = document.getElementById("auto-pick-clothing");
+const startCameraBtn = document.getElementById("start-camera-btn");
+const stopCameraBtn = document.getElementById("stop-camera-btn");
+const capturePoseBtn = document.getElementById("capture-pose-btn");
+const poseVideo = document.getElementById("pose-video");
+const poseCanvas = document.getElementById("pose-canvas");
+const poseStatus = document.getElementById("pose-status");
+const poseSummary = document.getElementById("pose-summary");
+
+const categoryGroupSelect = document.getElementById("category-group-select");
+const categoryTypeSelect = document.getElementById("category-type-select");
+const sizeSelect = document.getElementById("size-select");
+const colorSelect = document.getElementById("color-select");
+const imagePathPreviewInput = document.getElementById("image-path-preview");
+const clothingFileInput = document.getElementById("clothing-file");
+
+const CATEGORY_TREE = {
+  shirt: {
+    label: "Áo",
+    types: [
+      { value: "polo", label: "Áo polo" },
+      { value: "tshirt", label: "Áo T-shirt" },
+      { value: "shirt", label: "Áo sơ mi" },
+      { value: "hoodie", label: "Áo hoodie" },
+      { value: "jacket", label: "Áo khoác" },
+      { value: "other", label: "Loại áo khác" },
+    ],
+  },
+  pants: {
+    label: "Quần",
+    types: [
+      { value: "jeans", label: "Quần jeans" },
+      { value: "trouser", label: "Quần tây" },
+      { value: "short", label: "Quần short" },
+      { value: "jogger", label: "Quần jogger" },
+      { value: "skirt", label: "Chân váy" },
+      { value: "other", label: "Loại quần khác" },
+    ],
+  },
+};
+
+const SIZE_OPTIONS = ["S", "M", "L", "XL", "XXL"];
+const COLOR_OPTIONS = [
+  { value: "white", label: "Trắng" },
+  { value: "black", label: "Đen" },
+  { value: "blue", label: "Xanh dương" },
+  { value: "green", label: "Xanh lá" },
+  { value: "red", label: "Đỏ" },
+  { value: "gray", label: "Xám" },
+  { value: "brown", label: "Nâu" },
+  { value: "beige", label: "Be" },
+  { value: "pink", label: "Hồng" },
+  { value: "yellow", label: "Vàng" },
+  { value: "purple", label: "Tím" },
+];
+const SIZE_RANK = { S: 1, M: 2, L: 3, XL: 4, XXL: 5 };
 
 let usersCache = [];
 let clothingCache = [];
+let activeCameraStream = null;
+let latestPoseEstimate = null;
+
+const measurementInputs = {
+  name: form.querySelector('input[name="name"]'),
+  height_cm: form.querySelector('input[name="height_cm"]'),
+  chest_cm: form.querySelector('input[name="chest_cm"]'),
+  waist_cm: form.querySelector('input[name="waist_cm"]'),
+  hip_cm: form.querySelector('input[name="hip_cm"]'),
+  inseam_cm: form.querySelector('input[name="inseam_cm"]'),
+};
 
 function log(message) {
   statusLog.textContent += `\n${message}`;
@@ -24,6 +91,29 @@ function resetUi() {
   resultImage.removeAttribute("src");
 }
 
+function setPoseStatus(message) {
+  poseStatus.textContent = message;
+}
+
+function updatePoseSummary(estimate) {
+  if (!estimate) {
+    poseSummary.textContent = "Chưa có keypoints.";
+    return;
+  }
+
+  const m = estimate.measurements;
+  poseSummary.textContent = [
+    `Keypoints: ${estimate.keypoints.length}`,
+    `Height: ${m.height_cm} cm`,
+    `Chest: ${m.chest_cm} cm`,
+    `Waist: ${m.waist_cm} cm`,
+    `Hip: ${m.hip_cm} cm`,
+    `Inseam: ${m.inseam_cm} cm`,
+    `Shoulder: ${m.shoulder_cm} cm`,
+    `Arm length: ${m.arm_length_cm} cm`,
+  ].join("\n");
+}
+
 function selectedMode(name) {
   const el = form.querySelector(`input[name="${name}"]:checked`);
   return el ? el.value : "";
@@ -31,11 +121,14 @@ function selectedMode(name) {
 
 function fillSelect(selectEl, options, emptyText) {
   selectEl.innerHTML = "";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = emptyText;
+  placeholder.disabled = options.length > 0;
+  placeholder.selected = true;
+  selectEl.appendChild(placeholder);
+
   if (options.length === 0) {
-    const option = document.createElement("option");
-    option.value = "";
-    option.textContent = emptyText;
-    selectEl.appendChild(option);
     return;
   }
 
@@ -47,11 +140,132 @@ function fillSelect(selectEl, options, emptyText) {
   });
 }
 
+function composeCategory(group, type) {
+  return `${group}:${type}`;
+}
+
+function splitCategory(rawCategory) {
+  const raw = String(rawCategory || "").trim().toLowerCase();
+  if (!raw) {
+    return { group: "shirt", type: "other" };
+  }
+
+  const separators = [":", "/", "-"];
+  for (const sep of separators) {
+    if (raw.includes(sep)) {
+      const [left, right] = raw.split(sep, 2);
+      return {
+        group: CATEGORY_TREE[left] ? left : "shirt",
+        type: right || "other",
+      };
+    }
+  }
+
+  if (raw.includes("pant") || raw.includes("quan") || raw.includes("jean")) {
+    return { group: "pants", type: "other" };
+  }
+  return { group: "shirt", type: "other" };
+}
+
+function syncCategoryTypeOptions() {
+  const group = categoryGroupSelect.value || "shirt";
+  const types = CATEGORY_TREE[group] ? CATEGORY_TREE[group].types : CATEGORY_TREE.shirt.types;
+  const current = categoryTypeSelect.value;
+
+  fillSelect(
+    categoryTypeSelect,
+    types.map((t) => ({ value: t.value, label: t.label })),
+    "Chọn loại đồ",
+  );
+
+  if (types.some((t) => t.value === current)) {
+    categoryTypeSelect.value = current;
+  } else if (types.length > 0) {
+    categoryTypeSelect.value = types[0].value;
+  }
+}
+
+function initializeDropdowns() {
+  fillSelect(
+    categoryGroupSelect,
+    Object.entries(CATEGORY_TREE).map(([value, config]) => ({ value, label: config.label })),
+    "Chọn nhóm đồ",
+  );
+
+  categoryGroupSelect.value = "shirt";
+  syncCategoryTypeOptions();
+
+  fillSelect(sizeSelect, SIZE_OPTIONS.map((s) => ({ value: s, label: s })), "Chọn size");
+  fillSelect(colorSelect, COLOR_OPTIONS, "Chọn màu");
+
+  categoryTypeSelect.value = "tshirt";
+  sizeSelect.value = "M";
+  colorSelect.value = "blue";
+}
+
+function fillUserMeasurementFields(user) {
+  if (!user) {
+    return;
+  }
+  measurementInputs.name.value = user.name || "";
+  measurementInputs.height_cm.value = user.height_cm ?? "";
+  measurementInputs.chest_cm.value = user.chest_cm ?? "";
+  measurementInputs.waist_cm.value = user.waist_cm ?? "";
+  measurementInputs.hip_cm.value = user.hip_cm ?? "";
+  measurementInputs.inseam_cm.value = user.inseam_cm ?? "";
+}
+
+function setClothingInputState(isExistingMode) {
+  categoryGroupSelect.disabled = isExistingMode;
+  categoryTypeSelect.disabled = isExistingMode;
+  sizeSelect.disabled = isExistingMode;
+  colorSelect.disabled = isExistingMode;
+  clothingFileInput.disabled = isExistingMode;
+}
+
+function applyClothingToFields(item) {
+  if (!item) {
+    return;
+  }
+
+  const parsed = splitCategory(item.category);
+  categoryGroupSelect.value = CATEGORY_TREE[parsed.group] ? parsed.group : "shirt";
+  syncCategoryTypeOptions();
+
+  if (Array.from(categoryTypeSelect.options).some((opt) => opt.value === parsed.type)) {
+    categoryTypeSelect.value = parsed.type;
+  } else {
+    categoryTypeSelect.value = "other";
+  }
+
+  if (SIZE_OPTIONS.includes(String(item.size_label || "").toUpperCase())) {
+    sizeSelect.value = String(item.size_label).toUpperCase();
+  }
+
+  const normalizedColor = String(item.color || "").toLowerCase();
+  if (COLOR_OPTIONS.some((entry) => entry.value === normalizedColor)) {
+    colorSelect.value = normalizedColor;
+  }
+
+  imagePathPreviewInput.value = item.image_path || "";
+}
+
 function syncModeVisibility() {
   const userMode = selectedMode("user_mode");
   const clothingMode = selectedMode("clothing_mode");
+  const isExistingClothing = clothingMode === "existing";
   existingUserGroup.style.display = userMode === "existing" ? "grid" : "none";
-  existingClothingGroup.style.display = clothingMode === "existing" ? "grid" : "none";
+  existingClothingGroup.style.display = isExistingClothing ? "grid" : "none";
+  setClothingInputState(isExistingClothing);
+
+  if (isExistingClothing) {
+    const selectedId = Number(existingClothingSelect.value);
+    const item = clothingCache.find((c) => c.id === selectedId);
+    applyClothingToFields(item);
+  } else {
+    imagePathPreviewInput.value = "";
+    clothingFileInput.value = "";
+  }
 }
 
 async function apiJson(url, options) {
@@ -85,24 +299,32 @@ async function loadUsers() {
   fillSelect(
     existingUserSelect,
     usersCache.map((u) => ({ value: u.id, label: `#${u.id} - ${u.name}` })),
-    "No users found. Switch to Create new user.",
+    "Không có user. Chuyển sang tạo user mới.",
   );
+
+  if (usersCache.length > 0 && !existingUserSelect.value) {
+    existingUserSelect.value = String(usersCache[0].id);
+    fillUserMeasurementFields(usersCache[0]);
+  }
 }
 
 async function loadClothing() {
-  const selectedUserId = Number(existingUserSelect.value);
-  const hasUser = Number.isFinite(selectedUserId) && selectedUserId > 0;
-  const url = hasUser ? `/clothing-items?user_id=${selectedUserId}&limit=500` : "/clothing-items?limit=500";
-
-  clothingCache = await apiJson(url, { method: "GET" });
+  clothingCache = await apiJson("/clothing-items?limit=500", { method: "GET" });
   fillSelect(
     existingClothingSelect,
     clothingCache.map((c) => ({
       value: c.id,
-      label: `#${c.id} - user ${c.user_id} - ${c.category}/${c.size_label}/${c.color}`,
+      label: `#${c.id} - user ${c.user_id} - ${c.category} - ${String(c.size_label).toUpperCase()} - ${c.color}`,
     })),
-    "No clothing items found. Switch to Create new clothing item.",
+    "Không có clothing item. Chuyển sang tạo item mới.",
   );
+
+  if (clothingCache.length > 0) {
+    existingClothingSelect.value = String(clothingCache[0].id);
+    applyClothingToFields(clothingCache[0]);
+  } else {
+    imagePathPreviewInput.value = "";
+  }
 }
 
 function requireNumber(formData, name, message) {
@@ -111,6 +333,116 @@ function requireNumber(formData, name, message) {
     throw new Error(message);
   }
   return value;
+}
+
+function requireHeightReference() {
+  const height = Number(measurementInputs.height_cm.value);
+  if (!Number.isFinite(height) || height <= 50) {
+    throw new Error("Hãy nhập chiều cao thật trước khi chụp pose");
+  }
+  return height;
+}
+
+async function startCamera() {
+  if (activeCameraStream) {
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    throw new Error("Trình duyệt hiện tại không hỗ trợ webcam");
+  }
+
+  activeCameraStream = await navigator.mediaDevices.getUserMedia({
+    video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" },
+    audio: false,
+  });
+  poseVideo.srcObject = activeCameraStream;
+  await poseVideo.play();
+  setPoseStatus("Camera đang bật. Đứng thẳng trong khung hình rồi bấm chụp pose.");
+}
+
+function stopCamera() {
+  if (!activeCameraStream) {
+    setPoseStatus("Camera đã tắt.");
+    return;
+  }
+  activeCameraStream.getTracks().forEach((track) => track.stop());
+  activeCameraStream = null;
+  poseVideo.srcObject = null;
+  setPoseStatus("Camera đã tắt.");
+}
+
+function applyPoseMeasurementsToForm(measurements) {
+  measurementInputs.height_cm.value = measurements.height_cm;
+  measurementInputs.chest_cm.value = measurements.chest_cm;
+  measurementInputs.waist_cm.value = measurements.waist_cm;
+  measurementInputs.hip_cm.value = measurements.hip_cm;
+  measurementInputs.inseam_cm.value = measurements.inseam_cm;
+}
+
+async function capturePoseEstimate() {
+  if (!activeCameraStream) {
+    await startCamera();
+  }
+
+  const referenceHeight = requireHeightReference();
+  const width = poseVideo.videoWidth || 640;
+  const height = poseVideo.videoHeight || 480;
+
+  poseCanvas.width = width;
+  poseCanvas.height = height;
+  const ctx = poseCanvas.getContext("2d");
+  ctx.drawImage(poseVideo, 0, 0, width, height);
+
+  const blob = await new Promise((resolve, reject) => {
+    poseCanvas.toBlob((value) => {
+      if (value) {
+        resolve(value);
+      } else {
+        reject(new Error("Không thể tạo ảnh từ webcam"));
+      }
+    }, "image/jpeg", 0.92);
+  });
+
+  const payload = new FormData();
+  payload.append("file", blob, "pose-capture.jpg");
+  payload.append("reference_height_cm", String(referenceHeight));
+
+  setPoseStatus("Đang gửi frame lên backend để ước lượng pose...");
+  const estimate = await apiJson("/pose/estimate", {
+    method: "POST",
+    body: payload,
+  });
+
+  latestPoseEstimate = estimate;
+  applyPoseMeasurementsToForm(estimate.measurements);
+  updatePoseSummary(estimate);
+  setPoseStatus("Đã nhận keypoints và tự điền số đo vào form.");
+  log(`Pose estimated with ${estimate.keypoints.length} keypoints.`);
+}
+
+async function persistPoseMeasurementIfAvailable(userId, formData) {
+  if (!latestPoseEstimate) {
+    return;
+  }
+
+  const payload = {
+    user_id: userId,
+    height_cm: requireNumber(formData, "height_cm", "Please enter valid height"),
+    chest_cm: requireNumber(formData, "chest_cm", "Please enter valid chest"),
+    waist_cm: requireNumber(formData, "waist_cm", "Please enter valid waist"),
+    hip_cm: requireNumber(formData, "hip_cm", "Please enter valid hip"),
+    inseam_cm: requireNumber(formData, "inseam_cm", "Please enter valid inseam"),
+    source: "mediapipe_ui",
+    keypoints: latestPoseEstimate.keypoints,
+  };
+
+  log("2) Saving pose measurement to database...");
+  await apiJson("/body-measurements", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  log("Pose measurement saved.");
 }
 
 async function resolveUserId(formData) {
@@ -158,10 +490,11 @@ async function resolveClothingId(formData, userId) {
     }
 
     const item = clothingCache.find((c) => c.id === clothingId);
-    if (item && item.user_id !== userId) {
-      throw new Error("Selected clothing item does not belong to selected user");
+    if (!item) {
+      throw new Error("Selected clothing item was not found in the current catalog");
     }
 
+    applyClothingToFields(item);
     log(`Using existing clothing item: id=${clothingId}`);
     return clothingId;
   }
@@ -176,7 +509,7 @@ async function resolveClothingId(formData, userId) {
   const normalize = formData.get("normalize") === "on";
   const augment = formData.get("augment") === "on";
 
-  log("2) Preprocessing clothing image...");
+  log("3) Preprocessing clothing image...");
   const imageForm = new FormData();
   imageForm.append("file", file);
   const preprocess = await apiJson(
@@ -191,13 +524,13 @@ async function resolveClothingId(formData, userId) {
 
   const clothPayload = {
     user_id: userId,
-    category: String(formData.get("category") || "shirt"),
-    size_label: String(formData.get("size_label") || "M"),
-    color: String(formData.get("color") || "blue"),
+    category: composeCategory(categoryGroupSelect.value, categoryTypeSelect.value),
+    size_label: sizeSelect.value,
+    color: colorSelect.value,
     image_path: preprocess.file_url,
   };
 
-  log("3) Creating clothing item...");
+  log("4) Creating clothing item...");
   const cloth = await apiJson("/clothing-items", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -207,7 +540,53 @@ async function resolveClothingId(formData, userId) {
   log(`Clothing item created: id=${cloth.id}`);
   await loadClothing();
   existingClothingSelect.value = String(cloth.id);
+  applyClothingToFields(cloth);
   return cloth.id;
+}
+
+function estimateSizeFromMeasurement(measurement) {
+  const chest = Number(measurement && measurement.chest_cm);
+  if (!Number.isFinite(chest)) {
+    return "M";
+  }
+  if (chest < 90) return "S";
+  if (chest < 98) return "M";
+  if (chest < 106) return "L";
+  if (chest < 114) return "XL";
+  return "XXL";
+}
+
+async function autoPickClothing() {
+  const userId = Number(existingUserSelect.value);
+  if (!Number.isFinite(userId) || userId <= 0) {
+    throw new Error("Please select an existing user before auto-pick");
+  }
+
+  if (clothingCache.length === 0) {
+    throw new Error("No clothing items available for selected user");
+  }
+
+  let targetSize = "M";
+  try {
+    const measurement = await apiJson(`/body-measurements/latest/${userId}`, { method: "GET" });
+    targetSize = estimateSizeFromMeasurement(measurement);
+    log(`Auto-pick target size from latest body data: ${targetSize}`);
+  } catch (_error) {
+    log("Auto-pick uses default target size M (no latest body measurement found).");
+  }
+
+  const withRank = clothingCache
+    .map((item) => {
+      const rank = SIZE_RANK[String(item.size_label || "").toUpperCase()] || SIZE_RANK.M;
+      const targetRank = SIZE_RANK[targetSize] || SIZE_RANK.M;
+      return { item, distance: Math.abs(rank - targetRank) };
+    })
+    .sort((a, b) => a.distance - b.distance);
+
+  const picked = withRank[0].item;
+  existingClothingSelect.value = String(picked.id);
+  applyClothingToFields(picked);
+  log(`Auto-picked clothing item id=${picked.id}, size=${String(picked.size_label).toUpperCase()}`);
 }
 
 async function runFlow(event) {
@@ -218,9 +597,10 @@ async function runFlow(event) {
   try {
     const formData = new FormData(form);
     const userId = await resolveUserId(formData);
+    await persistPoseMeasurementIfAvailable(userId, formData);
     const clothingId = await resolveClothingId(formData, userId);
 
-    log("4) Starting texture generation task...");
+    log("5) Starting texture generation task...");
     const task = await apiJson("/tasks/generate-texture", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -229,7 +609,7 @@ async function runFlow(event) {
 
     log(`Task queued: task_id=${task.task_id}`);
 
-    log("5) Polling task status...");
+    log("6) Polling task status...");
     const completed = await pollTask(task.task_id);
 
     const absoluteUrl = `${window.location.origin}${completed.output_url}`;
@@ -257,10 +637,45 @@ form.addEventListener("change", (event) => {
   }
 });
 
+categoryGroupSelect.addEventListener("change", () => {
+  syncCategoryTypeOptions();
+});
+
+existingClothingSelect.addEventListener("change", () => {
+  const selectedId = Number(existingClothingSelect.value);
+  const item = clothingCache.find((c) => c.id === selectedId);
+  applyClothingToFields(item);
+});
+
 existingUserSelect.addEventListener("change", async () => {
   try {
-    await loadClothing();
+    const selectedId = Number(existingUserSelect.value);
+    const user = usersCache.find((entry) => entry.id === selectedId);
+    fillUserMeasurementFields(user);
+    log(`Selected existing user #${existingUserSelect.value}. Clothing catalog remains global across all users.`);
   } catch (error) {
+    log(`Error: ${error instanceof Error ? error.message : String(error)}`);
+  }
+});
+
+startCameraBtn.addEventListener("click", async () => {
+  try {
+    await startCamera();
+  } catch (error) {
+    setPoseStatus(`Lỗi camera: ${error instanceof Error ? error.message : String(error)}`);
+    log(`Error: ${error instanceof Error ? error.message : String(error)}`);
+  }
+});
+
+stopCameraBtn.addEventListener("click", () => {
+  stopCamera();
+});
+
+capturePoseBtn.addEventListener("click", async () => {
+  try {
+    await capturePoseEstimate();
+  } catch (error) {
+    setPoseStatus(`Lỗi pose: ${error instanceof Error ? error.message : String(error)}`);
     log(`Error: ${error instanceof Error ? error.message : String(error)}`);
   }
 });
@@ -282,13 +697,25 @@ refreshClothingBtn.addEventListener("click", async () => {
   }
 });
 
+autoPickClothingBtn.addEventListener("click", async () => {
+  try {
+    await autoPickClothing();
+  } catch (error) {
+    log(`Error: ${error instanceof Error ? error.message : String(error)}`);
+  }
+});
+
 async function initialize() {
+  initializeDropdowns();
   syncModeVisibility();
   statusLog.textContent = "Ready.";
 
   try {
     await loadUsers();
     await loadClothing();
+    if (usersCache.length > 0) {
+      fillUserMeasurementFields(usersCache[0]);
+    }
   } catch (error) {
     log(`Error: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -296,3 +723,6 @@ async function initialize() {
 
 initialize();
 
+window.addEventListener("beforeunload", () => {
+  stopCamera();
+});

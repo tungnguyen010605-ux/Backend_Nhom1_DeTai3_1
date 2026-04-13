@@ -1,4 +1,4 @@
-from app.schemas import BodyData
+from ..schemas import BodyData
 
 
 def build_mock_body_data(user_id: int, height_cm: float, chest_cm: float, waist_cm: float, hip_cm: float, inseam_cm: float) -> BodyData:

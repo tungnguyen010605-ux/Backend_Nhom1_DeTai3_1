@@ -1,7 +1,12 @@
-from sqlalchemy import Column, Float, ForeignKey, Integer, String
+import json
+
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import relationship
 
-from app.database import Base
+try:
+    from .database import Base
+except ImportError:  # Allows direct execution of this file in IDE run mode.
+    from database import Base
 
 
 class UserProfile(Base):
@@ -16,6 +21,33 @@ class UserProfile(Base):
     inseam_cm = Column(Float, nullable=False)
 
     clothing_items = relationship("ClothingItem", back_populates="owner", cascade="all, delete-orphan")
+    body_measurements = relationship("BodyMeasurement", back_populates="user", cascade="all, delete-orphan")
+
+
+class BodyMeasurement(Base):
+    __tablename__ = "body_measurements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("user_profiles.id"), nullable=False, index=True)
+    height_cm = Column(Float, nullable=False)
+    chest_cm = Column(Float, nullable=False)
+    waist_cm = Column(Float, nullable=False)
+    hip_cm = Column(Float, nullable=False)
+    inseam_cm = Column(Float, nullable=False)
+    source = Column(String(50), nullable=False, default="mediapipe")
+    keypoints_json = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    user = relationship("UserProfile", back_populates="body_measurements")
+
+    @property
+    def keypoints(self):
+        if not self.keypoints_json:
+            return None
+        try:
+            return json.loads(self.keypoints_json)
+        except json.JSONDecodeError:
+            return None
 
 
 class ClothingItem(Base):
@@ -29,4 +61,3 @@ class ClothingItem(Base):
     image_path = Column(String(300), nullable=True)
 
     owner = relationship("UserProfile", back_populates="clothing_items")
-

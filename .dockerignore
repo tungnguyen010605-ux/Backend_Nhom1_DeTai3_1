@@ -1,5 +1,6 @@
 .git
 .idea
+venv
 __pycache__
 *.pyc
 *.pyo
@@ -8,10 +9,8 @@ __pycache__
 env/
 venv/
 .env
-Dockerfile
-.dockerignore
-docker-compose.yml
 Bend/app/__pycache__
 app/__pycache__
 Bend/data/
 Bend/static/textures/
+.DS_Store

@@ -24,6 +24,12 @@ h1 {
   color: #4b5563;
 }
 
+.hint.small {
+  margin-top: 10px;
+  margin-bottom: 0;
+  font-size: 13px;
+}
+
 .card {
   background: #fff;
   border: 1px solid #e5e7eb;
@@ -66,6 +72,18 @@ select {
   padding: 8px;
 }
 
+select:disabled,
+input:disabled {
+  background: #eef2f7;
+  color: #64748b;
+  cursor: not-allowed;
+}
+
+input[readonly] {
+  background: #f8fafc;
+  color: #334155;
+}
+
 button {
   border: none;
   border-radius: 10px;
@@ -99,3 +117,44 @@ button:disabled {
   display: none;
 }
 
+#existing-clothing-group,
+#existing-user-group {
+  margin-bottom: 12px;
+}
+
+.camera-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 420px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+#pose-video {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  background: #0f172a;
+  object-fit: cover;
+}
+
+.pose-side {
+  display: grid;
+  gap: 10px;
+}
+
+#pose-summary {
+  margin: 0;
+  white-space: pre-wrap;
+  background: #111827;
+  color: #e5eefc;
+  border-radius: 8px;
+  padding: 12px;
+  min-height: 120px;
+}
+
+@media (max-width: 800px) {
+  .camera-layout {
+    grid-template-columns: 1fr;
+  }
+}

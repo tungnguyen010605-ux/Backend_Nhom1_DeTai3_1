@@ -8,7 +8,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY Bend/requirements.txt ./Bend/requirements.txt
-RUN pip install --no-cache-dir -r Bend/requirements.txt
+RUN pip install --default-timeout=1000 --retries=10 --no-cache-dir -r Bend/requirements.txt
 
 COPY . .
 

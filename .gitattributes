@@ -1,0 +1,48 @@
+# 3D models
+*.obj binary
+*.fbx binary
+*.blend binary
+
+# Audio
+*.mp3 binary
+*.ogg binary
+*.wav binary
+
+# Images
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.tga binary
+*.psd binary
+*.tif binary
+*.iff binary
+*.pict binary
+
+# Unity
+*.unity binary
+*.asset binary
+*.prefab binary
+*.mat binary
+*.anim binary
+*.controller binary
+*.overrideController binary
+*.physicMaterial binary
+*.physicsMaterial2D binary
+*.playable binary
+*.mask binary
+*.brush binary
+*.flare binary
+*.fontsettings binary
+*.guiskin binary
+*.giparams binary
+*.renderTexture binary
+*.spriteatlas binary
+*.terrainlayer binary
+*.mixer binary
+*.shadervariants binary
+
+# Builds and Archives
+*.apk binary
+*.aab binary
+*.zip binary
+*.rar binary

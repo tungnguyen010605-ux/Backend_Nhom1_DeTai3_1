@@ -1,5 +1,5 @@
 from app.main_api import app
-from .app.config import APP_HOST, APP_PORT
+from app.config import APP_HOST, APP_PORT
 
 
 if __name__ == "__main__":

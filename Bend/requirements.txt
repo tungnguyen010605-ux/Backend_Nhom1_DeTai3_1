@@ -6,4 +6,4 @@ pillow>=11.0.0
 python-multipart==0.0.9
 httpx==0.28.1
 opencv-python==4.10.0.84
-mediapipe==0.10.14
+mediapipe>=0.10.30

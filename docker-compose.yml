@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   web:
     build: .
@@ -11,6 +9,8 @@ services:
       - ./Bend/data:/app/Bend/data
       # Map thư mục textures để giữ lại các file ảnh render sau mỗi quá trình
       - ./Bend/static/textures:/app/Bend/static/textures
+      # Map thư mục ảnh quần áo upload để không mất dữ liệu khi restart container
+      - ./Bend/static/clothing_images:/app/Bend/static/clothing_images
     environment:
       - PYTHONUNBUFFERED=1
     restart: unless-stopped

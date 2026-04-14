@@ -27,7 +27,6 @@ try:
         UserResponse,
     )
     from .services.mock_vr import build_mock_body_data
-    from .services.pose_estimation import estimate_pose_from_image_bytes
     from .services.preprocess import preprocess_image_bytes
     from .services.tasks import TaskManager
 except ImportError:
@@ -50,7 +49,6 @@ except ImportError:
         UserResponse,
     )
     from Bend.app.services.mock_vr import build_mock_body_data
-    from Bend.app.services.pose_estimation import estimate_pose_from_image_bytes
     from Bend.app.services.preprocess import preprocess_image_bytes
     from Bend.app.services.tasks import TaskManager
 
@@ -68,6 +66,29 @@ app = FastAPI(title="CPU-Friendly Data Backend", version="1.0.0")
 app.mount("/textures", StaticFiles(directory=TEXTURE_DIR), name="textures")
 app.mount("/clothing-images", StaticFiles(directory=CLOTHING_IMAGE_DIR), name="clothing-images")
 app.mount("/ui/static", StaticFiles(directory=FRONTEND_DIR), name="ui-static")
+
+_pose_import_error: Exception | None = None
+estimate_pose_from_image_bytes = None
+
+try:
+    from .services.pose_estimation import estimate_pose_from_image_bytes
+except ImportError:
+    try:
+        from Bend.app.services.pose_estimation import estimate_pose_from_image_bytes
+    except ImportError as exc:
+        _pose_import_error = exc
+
+
+def _require_pose_estimator():
+    if estimate_pose_from_image_bytes is None:
+        detail = (
+            "Pose estimation dependencies are not available. "
+            "Install Bend/requirements.txt to enable /pose/estimate."
+        )
+        if _pose_import_error is not None:
+            detail = f"{detail} Missing dependency: {_pose_import_error}"
+        raise HTTPException(status_code=503, detail=detail)
+    return estimate_pose_from_image_bytes
 
 
 @app.middleware("http")
@@ -317,9 +338,10 @@ async def estimate_pose(
     file: UploadFile = File(...),
     reference_height_cm: float = Form(...),
 ) -> PoseEstimateResponse:
+    estimate_pose_impl = _require_pose_estimator()
     content = await file.read()
     try:
-        frame_result, measurement_estimate = estimate_pose_from_image_bytes(
+        frame_result, measurement_estimate = estimate_pose_impl(
             file_bytes=content,
             reference_height_cm=reference_height_cm,
         )

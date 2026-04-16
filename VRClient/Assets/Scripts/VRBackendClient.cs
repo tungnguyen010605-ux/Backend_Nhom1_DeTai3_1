@@ -66,6 +66,19 @@ public class VRBackendClient : MonoBehaviour
         StartCoroutine(FetchRandomAndFit());
     }
 
+    [ContextMenu("Test Pose Sync (Image -> Rig)")]
+    public void TestPoseSync()
+    {
+        VRPoseSyncClient poseSync = GetComponent<VRPoseSyncClient>();
+        if (poseSync == null)
+        {
+            Debug.LogWarning("Chưa gắn VRPoseSyncClient trên GameObject này.");
+            return;
+        }
+
+        poseSync.EstimatePoseAndApplyToRig();
+    }
+
     IEnumerator FetchRandomAndFit()
     {
         int pickedUser = -1;
@@ -196,22 +209,42 @@ public class VRBackendClient : MonoBehaviour
             if (request.result == UnityWebRequest.Result.Success)
             {
                 Texture2D texture = DownloadHandlerTexture.GetContent(request);
-                
-                if (avatarRenderer != null)
-                {
-                    // Ốp ảnh mới xuất từ AI vào skin của nhân vật
-                    avatarRenderer.material.mainTexture = texture;
-                    Debug.Log("<color=cyan>✨ Tada! Đã thay đồ thành công cho Avatar!</color>");
-                }
-                else
-                {
-                    Debug.LogWarning("Chưa kéo thả Renderer của avatar vào đoạn [Avatar Target] bên Inspector nha, nhưng đã tải xong tải Texture.");
-                }
+                ApplyTextureToAvatar(texture);
             }
             else
             {
                 Debug.LogError("❌ Failed to download texture: " + request.error);
             }
+        }
+    }
+
+    void ApplyTextureToAvatar(Texture2D texture)
+    {
+        if (avatarRenderer != null)
+        {
+            // Ốp ảnh mới xuất từ AI vào material; hỗ trợ cả shader legacy và URP/HDRP.
+            Material mat = avatarRenderer.material;
+            mat.mainTexture = texture;
+            if (mat.HasProperty("_BaseMap"))
+            {
+                mat.SetTexture("_BaseMap", texture);
+            }
+
+            // Tránh tint tối khiến texture mới nhìn như không thay đổi.
+            if (mat.HasProperty("_BaseColor"))
+            {
+                mat.SetColor("_BaseColor", Color.white);
+            }
+            if (mat.HasProperty("_Color"))
+            {
+                mat.SetColor("_Color", Color.white);
+            }
+
+            Debug.Log("<color=cyan>✨ Tada! Đã thay đồ thành công cho Avatar!</color>");
+        }
+        else
+        {
+            Debug.LogWarning("Chưa kéo thả Renderer của avatar vào đoạn [Avatar Target] bên Inspector nha, nhưng đã tải xong tải Texture.");
         }
     }
 }

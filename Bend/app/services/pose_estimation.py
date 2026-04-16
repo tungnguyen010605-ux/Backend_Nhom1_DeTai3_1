@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import asdict, dataclass
 from enum import Enum
 from io import BytesIO
@@ -11,6 +12,7 @@ import cv2
 import mediapipe as mp
 import numpy as np
 from PIL import Image
+from dotenv import load_dotenv
 
 try:
     from mediapipe.tasks.python import vision as mp_tasks_vision
@@ -82,7 +84,16 @@ class BodyMeasurementEstimate:
         return asdict(self)
 
 
-DEFAULT_TASK_MODEL_PATH = Path("/home/nien/model/pose_landmarker_full.task")
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+load_dotenv(PROJECT_ROOT / ".env")
+
+
+def _resolve_model_path(model_path: str | Path | None) -> Path:
+    configured_path = model_path or os.getenv("POSE_LANDMARKER_MODEL_PATH") or "pose_landmarker_full.task"
+    path = Path(configured_path).expanduser()
+    if not path.is_absolute():
+        path = (PROJECT_ROOT / path).resolve()
+    return path
 
 
 class PoseEstimator:
@@ -101,7 +112,7 @@ class PoseEstimator:
     ) -> None:
         self._draw_landmarks = draw_landmarks
         self._start_time = perf_counter()
-        self._model_path = Path(model_path).expanduser() if model_path else DEFAULT_TASK_MODEL_PATH
+        self._model_path = _resolve_model_path(model_path)
 
         if hasattr(mp, "solutions"):
             self._backend = MediaPipeBackend.CLASSIC

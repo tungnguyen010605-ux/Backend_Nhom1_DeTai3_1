@@ -2,6 +2,16 @@
 
 Phase B tập trung vào việc hiện thực hóa phần "lõi" của dự án (AI Model) và tích hợp nó vào Backend FastAPI một cách mượt mà để Unity có thể gọi đến mà không bị đứng server.
 
+### In Progress
+- [ ] Tối ưu chất lượng preprocessing đúng chuẩn CP-VTON (agnostic person, cloth mask, pose map) thay vì mức compatibility hiện tại.
+- [ ] Căn chỉnh lại persistence strategy để vừa giữ được ảnh quần áo gốc, vừa lưu được lịch sử output texture theo task.
+
+### To Do
+- [ ] Gắn checkpoint CP-VTON thật đã train ổn định (kèm versioning và rollback strategy).
+- [ ] Tạo quy trình đánh giá định lượng (FID/LPIPS hoặc proxy metric phù hợp đồ án) cho output fitting.
+- [ ] Hoàn thiện tài liệu runbook deploy + monitor VRAM cho môi trường demo.
+- [ ] Thiết kế Phase C cho avatar deformation (blendshape/bone scaling) để body measurements có ý nghĩa trực quan trong VR.
+
 ## Đánh giá Kiến trúc Hiện tại
 - Hiện tại, Backend đã có một thread độc lập (`TaskManager` trong `tasks.py`) để giả lập việc sinh ảnh (quá trình mất 2 giây).
 - Unity Client đã ghép nối thành công API poll `/status/{task_id}` và tự động tải ảnh về. Luồng kết nối đồng bộ cơ bản đã hoàn tất.
@@ -52,15 +62,6 @@ Viết các script độ lường độc lập để lập báo cáo đánh giá
 
 > [!WARNING]
 > Mảng Generative AI rủi ro tràn VRAM rất lớn trên Card 4GB/6GB/12GB! Cách thiết kế cấu trúc Dataset và Queue phục thuộc rất lớn vào kích thước file model (size parameters) và cách xử lý input.
-
-
-## Open Questions
-
-Để tôi có thể viết code chuẩn nhất cho pipeline Training và Inference, bạn hãy cho tôi biết:
-1. **Loại Model cụ thể**: Đội bạn quyết định code kiến trúc GAN (ví dụ Pix2Pix, VITON) hay chạy mạng Diffusion (Stable Diffusion variant) cho tác vụ fitting này?
-2. **Framework**: Mọi người dùng **PyTorch** đúng không?
-3. **Data**: Dữ liệu tiền xử lý (preprocessed data) của nhóm bạn hiện tại có format như thế nào? (File thư mục sắp xếp ra sao, ảnh kích thước bao nhiêu, v.v.).
-Bạn có thể mô tả sơ cấu trúc file để tôi viết `dataset.py` đọc cho đúng.
 
 ## Verification Plan
 1. **Automated Tests**: Dùng Postman hoặc script Python gửi luồng request, đảm bảo hệ thống xếp hàng ảnh đợi xử lý mà không bị nghẽn (crash web server).

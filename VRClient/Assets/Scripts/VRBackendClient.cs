@@ -26,13 +26,21 @@ public class VRBackendClient : MonoBehaviour
     public int testClothingId = 1;     // Dùng ID giả để test
     
     [Header("Avatar Target")]
-    public Renderer avatarRenderer;    // Kéo thả phần thân Avatar vào đây để thay đồ.
+    [Tooltip("Kéo thả Mesh của cái Áo (Tops) vào đây")]
+    public Renderer clothingRenderer;
+    [Tooltip("Kéo thả Mesh của cái Quần (Bottoms) vào đây")]
+    public Renderer pantsRenderer;
 
     void Start()
     {
         Debug.Log("🔌 Khởi động VR Client... Đang kết nối tới Backend.");
         StartCoroutine(TestHealthCheck());
     }
+
+    // ... (Giữ nguyên các hàm check và API khác, chỉ sửa reference apply hình ảnh)
+    // Tự động rút gọn code bằng cách bỏ qua các hàm ko đổi ở đây...
+
+    // (Tôi sẽ thay đổi toàn cục bên dưới)
 
     IEnumerator TestHealthCheck()
     {
@@ -220,31 +228,36 @@ public class VRBackendClient : MonoBehaviour
 
     void ApplyTextureToAvatar(Texture2D texture)
     {
-        if (avatarRenderer != null)
+        bool applied = false;
+        
+        if (clothingRenderer != null)
         {
-            // Ốp ảnh mới xuất từ AI vào material; hỗ trợ cả shader legacy và URP/HDRP.
-            Material mat = avatarRenderer.material;
-            mat.mainTexture = texture;
-            if (mat.HasProperty("_BaseMap"))
-            {
-                mat.SetTexture("_BaseMap", texture);
-            }
+            ApplyToSingleRenderer(clothingRenderer, texture);
+            applied = true;
+        }
+        
+        if (pantsRenderer != null)
+        {
+            ApplyToSingleRenderer(pantsRenderer, texture);
+            applied = true;
+        }
 
-            // Tránh tint tối khiến texture mới nhìn như không thay đổi.
-            if (mat.HasProperty("_BaseColor"))
-            {
-                mat.SetColor("_BaseColor", Color.white);
-            }
-            if (mat.HasProperty("_Color"))
-            {
-                mat.SetColor("_Color", Color.white);
-            }
-
-            Debug.Log("<color=cyan>✨ Tada! Đã thay đồ thành công cho Avatar!</color>");
+        if (applied)
+        {
+            Debug.Log("<color=cyan>✨ Tada! Đã thay đồ thành công lên Mesh Quần Áo!</color>");
         }
         else
         {
-            Debug.LogWarning("Chưa kéo thả Renderer của avatar vào đoạn [Avatar Target] bên Inspector nha, nhưng đã tải xong tải Texture.");
+            Debug.LogWarning("Chưa kéo thả Renderer của Áo/Quần vào Inspector nha, nhưng đã tải xong tải Texture.");
         }
+    }
+
+    void ApplyToSingleRenderer(Renderer rend, Texture2D tex)
+    {
+        Material mat = rend.material;
+        mat.mainTexture = tex;
+        if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", tex);
+        if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", Color.white);
+        if (mat.HasProperty("_Color")) mat.SetColor("_Color", Color.white);
     }
 }

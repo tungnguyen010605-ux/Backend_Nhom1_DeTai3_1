@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from pathlib import Path
 from typing import Awaitable, Callable
@@ -17,12 +18,15 @@ class TaskManager:
         output_dir: Path,
         max_concurrent_jobs: int = 2,
         on_task_completed: Callable[[int, int, str], None | Awaitable[None]] | None = None,
+        inference_backend: Callable[[int, int, Path], Path | None] | None = None,
     ) -> None:
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.max_concurrent_jobs = max_concurrent_jobs
         self.on_task_completed = on_task_completed
+        self._inference_backend = inference_backend
         self._semaphore = asyncio.Semaphore(max_concurrent_jobs)
+        self._executor = ThreadPoolExecutor(max_workers=max_concurrent_jobs, thread_name_prefix="texture-worker")
         self._tasks: dict[str, TaskStatus] = {}
         self._listeners: dict[str, set[asyncio.Queue]] = defaultdict(set)
 
@@ -46,6 +50,12 @@ class TaskManager:
         if not listeners:
             return
         listeners.discard(queue)
+
+    def set_inference_backend(self, inference_backend: Callable[[int, int, Path], Path | None] | None) -> None:
+        self._inference_backend = inference_backend
+
+    def shutdown(self) -> None:
+        self._executor.shutdown(wait=False, cancel_futures=True)
 
     async def _emit(self, task: TaskStatus) -> None:
         listeners = self._listeners.get(task.task_id, set())
@@ -77,10 +87,10 @@ class TaskManager:
             try:
                 await self._update_task(task_id, "running", 10, "Starting texture generation")
                 await asyncio.sleep(0.3)
-                await self._update_task(task_id, "running", 50, "Rendering lightweight mock texture")
+                await self._update_task(task_id, "running", 50, "Running VTON inference")
 
                 image_path = self.output_dir / f"generated_{task_id}.png"
-                self._create_mock_texture(image_path, user_id, clothing_item_id)
+                await self._generate_texture(image_path, user_id, clothing_item_id)
 
                 await asyncio.sleep(0.2)
                 output_url = f"/textures/{image_path.name}"
@@ -88,6 +98,14 @@ class TaskManager:
                 await self._update_task(task_id, "completed", 100, "Finished", output_url=output_url)
             except Exception as exc:
                 await self._update_task(task_id, "failed", 100, f"Failed: {exc}")
+
+    async def _generate_texture(self, path: Path, user_id: int, clothing_item_id: int) -> None:
+        if self._inference_backend is None:
+            self._create_mock_texture(path, user_id, clothing_item_id)
+            return
+
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(self._executor, self._inference_backend, user_id, clothing_item_id, path)
 
     @staticmethod
     def _create_mock_texture(path: Path, user_id: int, clothing_item_id: int) -> None:

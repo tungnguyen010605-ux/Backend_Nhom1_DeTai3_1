@@ -24,13 +24,75 @@ public class VRBackendClient : MonoBehaviour
     public string backendUrl = "http://localhost:8000";
     public int testUserId = 1;         // Dùng ID giả để test
     public int testClothingId = 1;     // Dùng ID giả để test
+    public bool autoHealthCheckOnStart = true;
     
     [Header("Avatar Target")]
     public Renderer avatarRenderer;    // Kéo thả phần thân Avatar vào đây để thay đồ.
 
+    [Header("Optional Helpers")]
+    public Transform avatarRoot;       // Nếu có model cha, script sẽ tự tìm renderer trong nhánh này.
+
+    bool _isWorkflowRunning;
+
+    void Reset()
+    {
+        TryAutoAssignAvatarRenderer();
+    }
+
+    void OnValidate()
+    {
+        if (avatarRenderer == null)
+        {
+            TryAutoAssignAvatarRenderer();
+        }
+    }
+
     void Start()
     {
-        Debug.Log("🔌 Khởi động VR Client... Đang kết nối tới Backend.");
+        if (avatarRenderer == null)
+        {
+            TryAutoAssignAvatarRenderer();
+        }
+
+        Debug.Log("🔌 Khởi động VR Client...");
+
+        if (autoHealthCheckOnStart)
+        {
+            StartCoroutine(TestHealthCheck());
+        }
+    }
+
+    public void TryAutoAssignAvatarRenderer()
+    {
+        Renderer foundRenderer = null;
+
+        if (avatarRoot != null)
+        {
+            foundRenderer = avatarRoot.GetComponentInChildren<SkinnedMeshRenderer>(true);
+            if (foundRenderer == null)
+            {
+                foundRenderer = avatarRoot.GetComponentInChildren<MeshRenderer>(true);
+            }
+        }
+
+        if (foundRenderer == null)
+        {
+            foundRenderer = FindFirstObjectByType<SkinnedMeshRenderer>(FindObjectsInactive.Include);
+            if (foundRenderer == null)
+            {
+                foundRenderer = FindFirstObjectByType<MeshRenderer>(FindObjectsInactive.Include);
+            }
+        }
+
+        if (foundRenderer != null)
+        {
+            avatarRenderer = foundRenderer;
+            Debug.Log($"<color=cyan>🔎 Tự gán avatarRenderer thành công: {avatarRenderer.name}</color>");
+        }
+    }
+
+    public void StartHealthCheck()
+    {
         StartCoroutine(TestHealthCheck());
     }
 
@@ -56,6 +118,12 @@ public class VRBackendClient : MonoBehaviour
     [ContextMenu("Test Request Fitting")]
     public void RunTestFittingWorkflow()
     {
+        if (_isWorkflowRunning)
+        {
+            Debug.LogWarning("⏳ Đang có workflow chạy rồi, chờ xíu nha.");
+            return;
+        }
+
         StartCoroutine(ExecuteFittingWorkflow(testUserId, testClothingId));
     }
 
@@ -63,6 +131,12 @@ public class VRBackendClient : MonoBehaviour
     [ContextMenu("Test Random User & Cloth")]
     public void TestRandomFromDB()
     {
+        if (_isWorkflowRunning)
+        {
+            Debug.LogWarning("⏳ Đang có workflow chạy rồi, chờ xíu nha.");
+            return;
+        }
+
         StartCoroutine(FetchRandomAndFit());
     }
 
@@ -117,6 +191,7 @@ public class VRBackendClient : MonoBehaviour
 
     IEnumerator ExecuteFittingWorkflow(int userId, int clothingId)
     {
+        _isWorkflowRunning = true;
         Debug.Log($"🔄 Đang gửi yêu cầu Fitting (User {userId}, Quần áo {clothingId})...");
         
         string jsonPayload = $"{{\"user_id\": {userId}, \"clothing_item_id\": {clothingId}}}";
@@ -133,10 +208,18 @@ public class VRBackendClient : MonoBehaviour
             if (request.result != UnityWebRequest.Result.Success)
             {
                 Debug.LogError("❌ Lỗi gọi API: " + request.error);
+                _isWorkflowRunning = false;
                 yield break;
             }
 
             TaskStatusResponse response = JsonUtility.FromJson<TaskStatusResponse>(request.downloadHandler.text);
+            if (response == null || string.IsNullOrEmpty(response.task_id))
+            {
+                Debug.LogError("❌ Backend trả dữ liệu task không hợp lệ.");
+                _isWorkflowRunning = false;
+                yield break;
+            }
+
             string taskId = response.task_id;
             Debug.Log($"<color=yellow>⏳ Đã tạo Task (ID: {taskId}). Chờ AI backend tạo Texture...</color>");
 
@@ -170,12 +253,14 @@ public class VRBackendClient : MonoBehaviour
                     else if (status.status == "failed")
                     {
                         Debug.LogError("❌ AI Backend phản hồi thất bại: " + status.message);
+                        _isWorkflowRunning = false;
                         yield break;
                     }
                 }
                 else
                 {
                     Debug.LogError("Lỗi Polling: " + request.error);
+                    _isWorkflowRunning = false;
                     yield break;
                 }
             }
@@ -187,6 +272,13 @@ public class VRBackendClient : MonoBehaviour
 
     IEnumerator DownloadAndApplyTexture(string resultUrl)
     {
+        if (string.IsNullOrEmpty(resultUrl))
+        {
+            Debug.LogError("❌ Backend không trả về đường dẫn texture.");
+            _isWorkflowRunning = false;
+            yield break;
+        }
+
         string fullUrl = backendUrl + resultUrl; // Endpoint URL tải file hình trả về (ex: localhost:8000/textures/123.jpg)
         
         using (UnityWebRequest request = UnityWebRequestTexture.GetTexture(fullUrl))
@@ -213,5 +305,7 @@ public class VRBackendClient : MonoBehaviour
                 Debug.LogError("❌ Failed to download texture: " + request.error);
             }
         }
+
+        _isWorkflowRunning = false;
     }
 }

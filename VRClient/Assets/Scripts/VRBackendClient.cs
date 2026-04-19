@@ -27,7 +27,10 @@ public class VRBackendClient : MonoBehaviour
     public bool autoHealthCheckOnStart = true;
     
     [Header("Avatar Target")]
-    public Renderer avatarRenderer;    // Kéo thả phần thân Avatar vào đây để thay đồ.
+    [Tooltip("Kéo thả Mesh của cái Áo (Tops) vào đây")]
+    public Renderer clothingRenderer;
+    [Tooltip("Kéo thả Mesh của cái Quần (Bottoms) vào đây")]
+    public Renderer pantsRenderer;
 
     [Header("Optional Helpers")]
     public Transform avatarRoot;       // Nếu có model cha, script sẽ tự tìm renderer trong nhánh này.
@@ -96,6 +99,11 @@ public class VRBackendClient : MonoBehaviour
         StartCoroutine(TestHealthCheck());
     }
 
+    // ... (Giữ nguyên các hàm check và API khác, chỉ sửa reference apply hình ảnh)
+    // Tự động rút gọn code bằng cách bỏ qua các hàm ko đổi ở đây...
+
+    // (Tôi sẽ thay đổi toàn cục bên dưới)
+
     IEnumerator TestHealthCheck()
     {
         using (UnityWebRequest request = UnityWebRequest.Get(backendUrl + "/health"))
@@ -138,6 +146,19 @@ public class VRBackendClient : MonoBehaviour
         }
 
         StartCoroutine(FetchRandomAndFit());
+    }
+
+    [ContextMenu("Test Pose Sync (Image -> Rig)")]
+    public void TestPoseSync()
+    {
+        VRPoseSyncClient poseSync = GetComponent<VRPoseSyncClient>();
+        if (poseSync == null)
+        {
+            Debug.LogWarning("Chưa gắn VRPoseSyncClient trên GameObject này.");
+            return;
+        }
+
+        poseSync.EstimatePoseAndApplyToRig();
     }
 
     IEnumerator FetchRandomAndFit()
@@ -288,17 +309,7 @@ public class VRBackendClient : MonoBehaviour
             if (request.result == UnityWebRequest.Result.Success)
             {
                 Texture2D texture = DownloadHandlerTexture.GetContent(request);
-                
-                if (avatarRenderer != null)
-                {
-                    // Ốp ảnh mới xuất từ AI vào skin của nhân vật
-                    avatarRenderer.material.mainTexture = texture;
-                    Debug.Log("<color=cyan>✨ Tada! Đã thay đồ thành công cho Avatar!</color>");
-                }
-                else
-                {
-                    Debug.LogWarning("Chưa kéo thả Renderer của avatar vào đoạn [Avatar Target] bên Inspector nha, nhưng đã tải xong tải Texture.");
-                }
+                ApplyTextureToAvatar(texture);
             }
             else
             {
@@ -307,5 +318,40 @@ public class VRBackendClient : MonoBehaviour
         }
 
         _isWorkflowRunning = false;
+    }
+
+    void ApplyTextureToAvatar(Texture2D texture)
+    {
+        bool applied = false;
+        
+        if (clothingRenderer != null)
+        {
+            ApplyToSingleRenderer(clothingRenderer, texture);
+            applied = true;
+        }
+        
+        if (pantsRenderer != null)
+        {
+            ApplyToSingleRenderer(pantsRenderer, texture);
+            applied = true;
+        }
+
+        if (applied)
+        {
+            Debug.Log("<color=cyan>✨ Tada! Đã thay đồ thành công lên Mesh Quần Áo!</color>");
+        }
+        else
+        {
+            Debug.LogWarning("Chưa kéo thả Renderer của Áo/Quần vào Inspector nha, nhưng đã tải xong tải Texture.");
+        }
+    }
+
+    void ApplyToSingleRenderer(Renderer rend, Texture2D tex)
+    {
+        Material mat = rend.material;
+        mat.mainTexture = tex;
+        if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", tex);
+        if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", Color.white);
+        if (mat.HasProperty("_Color")) mat.SetColor("_Color", Color.white);
     }
 }

@@ -1,5 +1,8 @@
 import json
+import asyncio
+import os
 from io import BytesIO
+from contextlib import asynccontextmanager
 from pathlib import Path
 import sys
 from uuid import uuid4
@@ -27,6 +30,7 @@ try:
         UserResponse,
     )
     from .services.mock_vr import build_mock_body_data
+    from .services.model_runtime import VTONRuntimeConfig, get_vton_runtime
     from .services.preprocess import preprocess_image_bytes
     from .services.tasks import TaskManager
 except ImportError:
@@ -49,6 +53,7 @@ except ImportError:
         UserResponse,
     )
     from Bend.app.services.mock_vr import build_mock_body_data
+    from Bend.app.services.model_runtime import VTONRuntimeConfig, get_vton_runtime
     from Bend.app.services.preprocess import preprocess_image_bytes
     from Bend.app.services.tasks import TaskManager
 
@@ -56,15 +61,57 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = BASE_DIR.parent
 TEXTURE_DIR = BASE_DIR / "static" / "textures"
 CLOTHING_IMAGE_DIR = BASE_DIR / "static" / "clothing_images"
+PERSON_IMAGE_DIR = BASE_DIR / "static" / "person_images"
 FRONTEND_DIR = BASE_DIR / "frontend"
 if not FRONTEND_DIR.exists():
     FRONTEND_DIR = PROJECT_ROOT / "Fend"
 TEXTURE_DIR.mkdir(parents=True, exist_ok=True)
 CLOTHING_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+PERSON_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="CPU-Friendly Data Backend", version="1.0.0")
+DEFAULT_CHECKPOINT = BASE_DIR / "ml_pipeline" / "checkpoints" / "cpvton_tom_latest.pth"
+
+
+def _resolve_checkpoint_path() -> Path | None:
+    configured = os.getenv("VTON_CHECKPOINT_PATH")
+    if configured:
+        path = Path(configured)
+        return path if path.exists() else None
+    return DEFAULT_CHECKPOINT if DEFAULT_CHECKPOINT.exists() else None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    checkpoint_path = _resolve_checkpoint_path()
+    runtime = get_vton_runtime(
+        VTONRuntimeConfig(
+            input_height=256,
+            input_width=192,
+            checkpoint_path=checkpoint_path,
+            model_type=os.getenv("VTON_MODEL_TYPE", "cpvton_tom"),
+            input_channels=int(os.getenv("VTON_INPUT_CHANNELS", "25")),
+            output_channels=int(os.getenv("VTON_OUTPUT_CHANNELS", "4")),
+            use_half_precision=os.getenv("VTON_USE_FP16", "false").lower() == "true",
+        )
+    )
+    runtime.set_input_resolver(resolve_inference_inputs)
+    await asyncio.to_thread(runtime.load)
+    task_manager.set_inference_backend(runtime.infer_texture)
+    app.state.vton_runtime = runtime
+
+    Base.metadata.create_all(bind=engine)
+    _ensure_sqlite_column("body_measurements", "keypoints_json", "TEXT")
+
+    try:
+        yield
+    finally:
+        task_manager.shutdown()
+
+
+app = FastAPI(title="CPU-Friendly Data Backend", version="1.0.0", lifespan=lifespan)
 app.mount("/textures", StaticFiles(directory=TEXTURE_DIR), name="textures")
 app.mount("/clothing-images", StaticFiles(directory=CLOTHING_IMAGE_DIR), name="clothing-images")
+app.mount("/person-images", StaticFiles(directory=PERSON_IMAGE_DIR), name="person-images")
 app.mount("/ui/static", StaticFiles(directory=FRONTEND_DIR), name="ui-static")
 
 _pose_import_error: Exception | None = None
@@ -113,6 +160,34 @@ def _save_uploaded_clothing_image(content: bytes) -> str:
     return f"/clothing-images/{out_path.name}"
 
 
+def _save_user_reference_image(user_id: int, content: bytes) -> str:
+    try:
+        image = Image.open(BytesIO(content))
+        image.load()
+    except Exception as exc:  # pragma: no cover - Pillow validation path
+        raise HTTPException(status_code=400, detail="Invalid user reference image") from exc
+
+    out_path = PERSON_IMAGE_DIR / f"user_{user_id}.png"
+    image.convert("RGB").save(out_path, format="PNG", optimize=True)
+    return f"/person-images/{out_path.name}"
+
+
+def _asset_url_to_path(asset_url: str | None) -> Path | None:
+    if not asset_url:
+        return None
+
+    normalized = asset_url.split("?", maxsplit=1)[0]
+    mappings = {
+        "/clothing-images/": CLOTHING_IMAGE_DIR,
+        "/textures/": TEXTURE_DIR,
+        "/person-images/": PERSON_IMAGE_DIR,
+    }
+    for prefix, folder in mappings.items():
+        if normalized.startswith(prefix):
+            return folder / Path(normalized.removeprefix(prefix)).name
+    return None
+
+
 def _latest_body_measurement(db: Session, user_id: int) -> BodyMeasurement | None:
     return (
         db.query(BodyMeasurement)
@@ -132,8 +207,26 @@ def persist_task_output(user_id: int, clothing_item_id: int, output_url: str) ->
         )
         if not cloth:
             raise ValueError("Clothing item not found")
-        cloth.image_path = output_url
+        if not cloth.image_path or cloth.image_path.startswith("/textures/"):
+            cloth.image_path = output_url
         db.commit()
+    finally:
+        db.close()
+
+
+def resolve_inference_inputs(user_id: int, clothing_item_id: int) -> tuple[Path | None, Path | None]:
+    db = SessionLocal()
+    try:
+        cloth = db.query(ClothingItem).filter(ClothingItem.id == clothing_item_id).first()
+        cloth_path = _asset_url_to_path(cloth.image_path if cloth else None)
+        person_path = PERSON_IMAGE_DIR / f"user_{user_id}.png"
+
+        if cloth_path is not None and not cloth_path.exists():
+            cloth_path = None
+        if not person_path.exists():
+            person_path = None
+
+        return person_path, cloth_path
     finally:
         db.close()
 
@@ -155,12 +248,6 @@ task_manager = TaskManager(
     max_concurrent_jobs=2,
     on_task_completed=persist_task_output,
 )
-
-
-@app.on_event("startup")
-def on_startup() -> None:
-    Base.metadata.create_all(bind=engine)
-    _ensure_sqlite_column("body_measurements", "keypoints_json", "TEXT")
 
 
 @app.get("/health")
@@ -212,6 +299,24 @@ def get_user(user_id: int, db: Session = Depends(get_db)) -> UserProfile:
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
+
+
+@app.post("/users/{user_id}/reference-image")
+async def upload_user_reference_image(
+    user_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+) -> dict:
+    user = db.query(UserProfile).filter(UserProfile.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    file_bytes = await file.read()
+    image_url = _save_user_reference_image(user_id, file_bytes)
+    return {
+        "user_id": user_id,
+        "image_url": image_url,
+    }
 
 
 @app.post("/body-measurements", response_model=BodyMeasurementResponse)

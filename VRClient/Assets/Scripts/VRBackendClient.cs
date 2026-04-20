@@ -25,7 +25,7 @@ public class VRBackendClient : MonoBehaviour
     public int testUserId = 1;         // Dùng ID giả để test
     public int testClothingId = 1;     // Dùng ID giả để test
     public bool autoHealthCheckOnStart = true;
-    
+
     [Header("Avatar Target")]
     [Tooltip("Kéo thả Mesh của cái Áo (Tops) vào đây")]
     public Renderer clothingRenderer;
@@ -44,7 +44,7 @@ public class VRBackendClient : MonoBehaviour
 
     void OnValidate()
     {
-        if (avatarRenderer == null)
+        if (clothingRenderer == null && pantsRenderer == null)
         {
             TryAutoAssignAvatarRenderer();
         }
@@ -52,7 +52,7 @@ public class VRBackendClient : MonoBehaviour
 
     void Start()
     {
-        if (avatarRenderer == null)
+        if (clothingRenderer == null && pantsRenderer == null)
         {
             TryAutoAssignAvatarRenderer();
         }
@@ -67,30 +67,25 @@ public class VRBackendClient : MonoBehaviour
 
     public void TryAutoAssignAvatarRenderer()
     {
-        Renderer foundRenderer = null;
+        Renderer[] candidateRenderers = avatarRoot != null
+            ? avatarRoot.GetComponentsInChildren<Renderer>(true)
+            : FindObjectsByType<Renderer>(FindObjectsInactive.Include, FindObjectsSortMode.None);
 
-        if (avatarRoot != null)
+        if (candidateRenderers == null || candidateRenderers.Length == 0)
         {
-            foundRenderer = avatarRoot.GetComponentInChildren<SkinnedMeshRenderer>(true);
-            if (foundRenderer == null)
-            {
-                foundRenderer = avatarRoot.GetComponentInChildren<MeshRenderer>(true);
-            }
+            return;
         }
 
-        if (foundRenderer == null)
+        if (clothingRenderer == null)
         {
-            foundRenderer = FindFirstObjectByType<SkinnedMeshRenderer>(FindObjectsInactive.Include);
-            if (foundRenderer == null)
-            {
-                foundRenderer = FindFirstObjectByType<MeshRenderer>(FindObjectsInactive.Include);
-            }
+            clothingRenderer = candidateRenderers[0];
+            Debug.Log($"<color=cyan>🔎 Tự gán clothingRenderer: {clothingRenderer.name}</color>");
         }
 
-        if (foundRenderer != null)
+        if (pantsRenderer == null && candidateRenderers.Length > 1)
         {
-            avatarRenderer = foundRenderer;
-            Debug.Log($"<color=cyan>🔎 Tự gán avatarRenderer thành công: {avatarRenderer.name}</color>");
+            pantsRenderer = candidateRenderers[1];
+            Debug.Log($"<color=cyan>🔎 Tự gán pantsRenderer: {pantsRenderer.name}</color>");
         }
     }
 
@@ -214,9 +209,9 @@ public class VRBackendClient : MonoBehaviour
     {
         _isWorkflowRunning = true;
         Debug.Log($"🔄 Đang gửi yêu cầu Fitting (User {userId}, Quần áo {clothingId})...");
-        
+
         string jsonPayload = $"{{\"user_id\": {userId}, \"clothing_item_id\": {clothingId}}}";
-        
+
         using (UnityWebRequest request = new UnityWebRequest(backendUrl + "/tasks/generate-texture", "POST"))
         {
             byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonPayload);
@@ -301,7 +296,7 @@ public class VRBackendClient : MonoBehaviour
         }
 
         string fullUrl = backendUrl + resultUrl; // Endpoint URL tải file hình trả về (ex: localhost:8000/textures/123.jpg)
-        
+
         using (UnityWebRequest request = UnityWebRequestTexture.GetTexture(fullUrl))
         {
             yield return request.SendWebRequest();
@@ -323,13 +318,13 @@ public class VRBackendClient : MonoBehaviour
     void ApplyTextureToAvatar(Texture2D texture)
     {
         bool applied = false;
-        
+
         if (clothingRenderer != null)
         {
             ApplyToSingleRenderer(clothingRenderer, texture);
             applied = true;
         }
-        
+
         if (pantsRenderer != null)
         {
             ApplyToSingleRenderer(pantsRenderer, texture);

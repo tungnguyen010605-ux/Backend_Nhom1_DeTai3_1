@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -56,7 +58,7 @@ class ClothingItemCreate(BaseModel):
     image_path: str | None = None
     preview_image_path: str | None = None
     model_path: str | None = None
-    render_mode: str = Field(default="texture", min_length=3, max_length=20)
+    render_mode: Literal["texture", "prefab"] = "texture"
     body_compatibility: list[str] | None = None
     runtime_notes: str | None = None
 

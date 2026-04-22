@@ -458,8 +458,14 @@ public class RemyWardrobeViewer : MonoBehaviour
         string renderMode = string.IsNullOrWhiteSpace(item.render_mode)
             ? string.Empty
             : item.render_mode.ToLowerInvariant();
-        if (renderMode != "prefab" && string.IsNullOrWhiteSpace(item.model_path))
+        if (renderMode != "prefab")
         {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(item.model_path))
+        {
+            _statusMessage = "Item #" + item.id + " dang o prefab mode nhung thieu model_path.";
             return false;
         }
 

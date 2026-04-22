@@ -1,6 +1,7 @@
 import json
 import asyncio
 import os
+from typing import Literal
 from io import BytesIO
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -473,7 +474,7 @@ async def create_clothing_item_with_image(
     color: str = Form(...),
     preview_image_path: str | None = Form(default=None),
     model_path: str | None = Form(default=None),
-    render_mode: str = Form(default="texture"),
+    render_mode: Literal["texture", "prefab"] = Form(default="texture"),
     body_compatibility: str | None = Form(default=None),
     runtime_notes: str | None = Form(default=None),
     file: UploadFile = File(...),

@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -218,6 +219,76 @@ public class VRBackendClient : MonoBehaviour
         return gender == AvatarGender.Female ? "Nu" : "Nam";
     }
 
+    private bool MatchesSelectedGender(UserListItem user)
+    {
+        if (user == null)
+        {
+            return false;
+        }
+
+        string normalized = string.IsNullOrWhiteSpace(user.gender)
+            ? "male"
+            : user.gender.ToLowerInvariant();
+        bool isFemale = normalized == "female";
+        return selectedGender == AvatarGender.Female ? isFemale : !isFemale;
+    }
+
+    private List<UserListItem> GetVisibleUsers()
+    {
+        List<UserListItem> result = new List<UserListItem>();
+        if (_userList == null || _userList.Length == 0)
+        {
+            return result;
+        }
+
+        for (int i = 0; i < _userList.Length; i++)
+        {
+            UserListItem user = _userList[i];
+            if (MatchesSelectedGender(user))
+            {
+                result.Add(user);
+            }
+        }
+
+        // Ban ghi moi nhat len dau danh sach.
+        result.Sort((a, b) => b.id.CompareTo(a.id));
+        return result;
+    }
+
+    private bool EnsureUserSelectionMatchesCurrentGender()
+    {
+        List<UserListItem> visibleUsers = GetVisibleUsers();
+        if (visibleUsers.Count == 0)
+        {
+            selectedUserId = -1;
+            selectedClothingId = -1;
+            _clothingList = new ClothingListItem[0];
+            ApplyUserFilterToWardrobe();
+            return false;
+        }
+
+        bool selectedStillVisible = false;
+        for (int i = 0; i < visibleUsers.Count; i++)
+        {
+            if (visibleUsers[i].id == selectedUserId)
+            {
+                selectedStillVisible = true;
+                break;
+            }
+        }
+
+        if (!selectedStillVisible)
+        {
+            selectedUserId = visibleUsers[0].id;
+            selectedClothingId = -1;
+            ApplyUserFilterToWardrobe();
+            return true;
+        }
+
+        ApplyUserFilterToWardrobe();
+        return false;
+    }
+
     private string BuildUserLabel(UserListItem user)
     {
         string userName = user != null ? user.name : string.Empty;
@@ -346,6 +417,11 @@ public class VRBackendClient : MonoBehaviour
             {
                 selectedGender = AvatarGender.Male;
                 ApplySelectedGender();
+                bool changedUser = EnsureUserSelectionMatchesCurrentGender();
+                if (changedUser && selectedUserId > 0)
+                {
+                    StartCoroutine(FetchClothingByUser(selectedUserId));
+                }
             }
         }
 
@@ -355,6 +431,11 @@ public class VRBackendClient : MonoBehaviour
             {
                 selectedGender = AvatarGender.Female;
                 ApplySelectedGender();
+                bool changedUser = EnsureUserSelectionMatchesCurrentGender();
+                if (changedUser && selectedUserId > 0)
+                {
+                    StartCoroutine(FetchClothingByUser(selectedUserId));
+                }
             }
         }
         GUILayout.EndHorizontal();
@@ -362,12 +443,13 @@ public class VRBackendClient : MonoBehaviour
         GUILayout.Space(8f);
         GUILayout.Label("Chon User:", _sectionStyle);
 
-        if (_userList != null && _userList.Length > 0)
+        List<UserListItem> visibleUsers = GetVisibleUsers();
+        if (visibleUsers.Count > 0)
         {
             _userScroll = GUILayout.BeginScrollView(_userScroll, GUILayout.Height(220f));
-            for (int i = 0; i < _userList.Length; i++)
+            for (int i = 0; i < visibleUsers.Count; i++)
             {
-                UserListItem user = _userList[i];
+                UserListItem user = visibleUsers[i];
                 bool isSelected = user != null && user.id == selectedUserId;
                 Color oldColor = GUI.backgroundColor;
                 if (isSelected)
@@ -394,7 +476,14 @@ public class VRBackendClient : MonoBehaviour
         }
         else
         {
-            GUILayout.Label("Dang tai danh sach user...");
+            if (_userList == null)
+            {
+                GUILayout.Label("Dang tai danh sach user...");
+            }
+            else
+            {
+                GUILayout.Label("Khong co user phu hop voi gioi tinh dang chon.");
+            }
         }
 
         GUILayout.Space(10f);
@@ -552,37 +641,12 @@ public class VRBackendClient : MonoBehaviour
                 {
                     _userList = wrapper.Items;
                     Debug.Log($"<color=green>✅ Tải được {_userList.Length} users.</color>");
+                    EnsureUserSelectionMatchesCurrentGender();
 
-                    bool hasCurrentSelection = false;
-                    for (int i = 0; i < _userList.Length; i++)
+                    if (selectedUserId > 0)
                     {
-                        if (_userList[i] != null && _userList[i].id == selectedUserId)
-                        {
-                            hasCurrentSelection = true;
-                            break;
-                        }
+                        StartCoroutine(FetchClothingByUser(selectedUserId));
                     }
-
-                    if (!hasCurrentSelection)
-                    {
-                        selectedUserId = _userList[0].id;
-                    }
-
-                    UserListItem selectedUser = null;
-                    for (int i = 0; i < _userList.Length; i++)
-                    {
-                        if (_userList[i] != null && _userList[i].id == selectedUserId)
-                        {
-                            selectedUser = _userList[i];
-                            break;
-                        }
-                    }
-
-                    SyncGenderFromUser(selectedUser);
-
-                    selectedClothingId = -1;
-                    ApplySelectedGender();
-                    StartCoroutine(FetchClothingByUser(selectedUserId));
                 }
                 else
                 {

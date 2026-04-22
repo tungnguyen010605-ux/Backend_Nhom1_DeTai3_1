@@ -606,6 +606,14 @@ async def generate_texture(payload: TaskCreateRequest, db: Session = Depends(get
     cloth = db.query(ClothingItem).filter(ClothingItem.id == payload.clothing_item_id).first()
     if not cloth:
         raise HTTPException(status_code=404, detail="Clothing item not found")
+    if cloth.user_id != payload.user_id:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Clothing item #{cloth.id} belongs to user_id={cloth.user_id}, "
+                f"but request used user_id={payload.user_id}."
+            ),
+        )
 
     return task_manager.create_task(payload.user_id, payload.clothing_item_id)
 

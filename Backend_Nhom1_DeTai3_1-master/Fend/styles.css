@@ -1,0 +1,160 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f4f6f8;
+  color: #1f2937;
+}
+
+.container {
+  max-width: 980px;
+  margin: 24px auto;
+  padding: 0 16px 32px;
+}
+
+h1 {
+  margin: 0 0 8px;
+}
+
+.hint {
+  margin: 0 0 16px;
+  color: #4b5563;
+}
+
+.hint.small {
+  margin-top: 10px;
+  margin-bottom: 0;
+  font-size: 13px;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.mode-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+  align-items: center;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+
+label.full {
+  grid-column: 1 / -1;
+}
+
+input[type="text"],
+input[type="number"],
+input[type="file"],
+select {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+select:disabled,
+input:disabled {
+  background: #eef2f7;
+  color: #64748b;
+  cursor: not-allowed;
+}
+
+input[readonly] {
+  background: #f8fafc;
+  color: #334155;
+}
+
+button {
+  border: none;
+  border-radius: 10px;
+  padding: 12px 16px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+#status-log {
+  margin: 0;
+  white-space: pre-wrap;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 12px;
+  min-height: 90px;
+}
+
+#result-image {
+  max-width: 100%;
+  margin-top: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: none;
+}
+
+#existing-clothing-group,
+#existing-user-group {
+  margin-bottom: 12px;
+}
+
+.camera-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 420px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+#pose-video {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  background: #0f172a;
+  object-fit: cover;
+}
+
+.pose-side {
+  display: grid;
+  gap: 10px;
+}
+
+#pose-summary {
+  margin: 0;
+  white-space: pre-wrap;
+  background: #111827;
+  color: #e5eefc;
+  border-radius: 8px;
+  padding: 12px;
+  min-height: 120px;
+}
+
+@media (max-width: 800px) {
+  .camera-layout {
+    grid-template-columns: 1fr;
+  }
+}

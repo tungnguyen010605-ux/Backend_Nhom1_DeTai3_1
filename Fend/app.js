@@ -22,6 +22,12 @@ const categoryGroupSelect = document.getElementById("category-group-select");
 const categoryTypeSelect = document.getElementById("category-type-select");
 const sizeSelect = document.getElementById("size-select");
 const colorSelect = document.getElementById("color-select");
+const displayNameInput = document.getElementById("display-name-input");
+const runtimeSlotSelect = document.getElementById("runtime-slot-select");
+const renderModeSelect = document.getElementById("render-mode-select");
+const modelPathInput = document.getElementById("model-path-input");
+const bodyCompatibilityInput = document.getElementById("body-compatibility-input");
+const runtimeNotesInput = document.getElementById("runtime-notes-input");
 const imagePathPreviewInput = document.getElementById("image-path-preview");
 const clothingFileInput = document.getElementById("clothing-file");
 
@@ -51,6 +57,17 @@ const CATEGORY_TREE = {
 };
 
 const SIZE_OPTIONS = ["S", "M", "L", "XL", "XXL"];
+const RUNTIME_SLOT_OPTIONS = [
+  { value: "top", label: "Top / Áo" },
+  { value: "bottom", label: "Bottom / Quần" },
+  { value: "shoes", label: "Shoes / Giày" },
+  { value: "fullbody", label: "Full body" },
+  { value: "accessory", label: "Accessory" },
+];
+const RENDER_MODE_OPTIONS = [
+  { value: "texture", label: "Texture overlay" },
+  { value: "prefab", label: "Prefab / outfit 3D" },
+];
 const COLOR_OPTIONS = [
   { value: "white", label: "Trắng" },
   { value: "black", label: "Đen" },
@@ -197,10 +214,14 @@ function initializeDropdowns() {
 
   fillSelect(sizeSelect, SIZE_OPTIONS.map((s) => ({ value: s, label: s })), "Chọn size");
   fillSelect(colorSelect, COLOR_OPTIONS, "Chọn màu");
+  fillSelect(runtimeSlotSelect, RUNTIME_SLOT_OPTIONS, "Chọn slot");
+  fillSelect(renderModeSelect, RENDER_MODE_OPTIONS, "Chọn mode render");
 
   categoryTypeSelect.value = "tshirt";
+  runtimeSlotSelect.value = "top";
   sizeSelect.value = "M";
   colorSelect.value = "blue";
+  renderModeSelect.value = "texture";
 }
 
 function fillUserMeasurementFields(user) {
@@ -216,11 +237,28 @@ function fillUserMeasurementFields(user) {
 }
 
 function setClothingInputState(isExistingMode) {
+  displayNameInput.disabled = isExistingMode;
   categoryGroupSelect.disabled = isExistingMode;
   categoryTypeSelect.disabled = isExistingMode;
+  runtimeSlotSelect.disabled = isExistingMode;
   sizeSelect.disabled = isExistingMode;
   colorSelect.disabled = isExistingMode;
+  renderModeSelect.disabled = isExistingMode;
+  modelPathInput.disabled = isExistingMode;
+  bodyCompatibilityInput.disabled = isExistingMode;
+  runtimeNotesInput.disabled = isExistingMode;
   clothingFileInput.disabled = isExistingMode;
+}
+
+function parseBodyCompatibilityCsv(rawValue) {
+  return String(rawValue || "")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function formatBodyCompatibility(value) {
+  return Array.isArray(value) ? value.join(", ") : "";
 }
 
 function applyClothingToFields(item) {
@@ -238,6 +276,15 @@ function applyClothingToFields(item) {
     categoryTypeSelect.value = "other";
   }
 
+  displayNameInput.value = item.display_name || "";
+
+  const runtimeSlot = String(item.slot || "").toLowerCase();
+  if (Array.from(runtimeSlotSelect.options).some((opt) => opt.value === runtimeSlot)) {
+    runtimeSlotSelect.value = runtimeSlot;
+  } else {
+    runtimeSlotSelect.value = parsed.group === "pants" ? "bottom" : "top";
+  }
+
   if (SIZE_OPTIONS.includes(String(item.size_label || "").toUpperCase())) {
     sizeSelect.value = String(item.size_label).toUpperCase();
   }
@@ -247,7 +294,14 @@ function applyClothingToFields(item) {
     colorSelect.value = normalizedColor;
   }
 
-  imagePathPreviewInput.value = item.image_path || "";
+  const renderMode = String(item.render_mode || "texture").toLowerCase();
+  renderModeSelect.value = RENDER_MODE_OPTIONS.some((entry) => entry.value === renderMode)
+    ? renderMode
+    : "texture";
+  modelPathInput.value = item.model_path || "";
+  bodyCompatibilityInput.value = formatBodyCompatibility(item.body_compatibility);
+  runtimeNotesInput.value = item.runtime_notes || "";
+  imagePathPreviewInput.value = item.preview_image_path || item.image_path || "";
 }
 
 function syncModeVisibility() {
@@ -263,6 +317,12 @@ function syncModeVisibility() {
     const item = clothingCache.find((c) => c.id === selectedId);
     applyClothingToFields(item);
   } else {
+    displayNameInput.value = "";
+    runtimeSlotSelect.value = "top";
+    renderModeSelect.value = "texture";
+    modelPathInput.value = "";
+    bodyCompatibilityInput.value = "";
+    runtimeNotesInput.value = "";
     imagePathPreviewInput.value = "";
     clothingFileInput.value = "";
   }
@@ -314,7 +374,7 @@ async function loadClothing() {
     existingClothingSelect,
     clothingCache.map((c) => ({
       value: c.id,
-      label: `#${c.id} - user ${c.user_id} - ${c.category} - ${String(c.size_label).toUpperCase()} - ${c.color}`,
+      label: `#${c.id} - ${c.display_name || c.category} - ${String(c.render_mode || "texture").toUpperCase()} - ${String(c.size_label).toUpperCase()} - ${c.color}`,
     })),
     "Không có clothing item. Chuyển sang tạo item mới.",
   );
@@ -524,10 +584,17 @@ async function resolveClothingId(formData, userId) {
 
   const clothPayload = {
     user_id: userId,
+    display_name: String(formData.get("display_name") || "").trim() || null,
     category: composeCategory(categoryGroupSelect.value, categoryTypeSelect.value),
+    slot: runtimeSlotSelect.value || null,
     size_label: sizeSelect.value,
     color: colorSelect.value,
     image_path: preprocess.file_url,
+    preview_image_path: preprocess.file_url,
+    model_path: String(formData.get("model_path") || "").trim() || null,
+    render_mode: renderModeSelect.value || "texture",
+    body_compatibility: parseBodyCompatibilityCsv(formData.get("body_compatibility")),
+    runtime_notes: String(formData.get("runtime_notes") || "").trim() || null,
   };
 
   log("4) Creating clothing item...");

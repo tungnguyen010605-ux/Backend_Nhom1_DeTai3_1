@@ -67,11 +67,17 @@
           </label>
         </div>
         <div class="grid">
+          <label>Tên hiển thị
+            <input name="display_name" id="display-name-input" type="text" maxlength="120" placeholder="Ví dụ: Hoodie xanh form rộng" />
+          </label>
           <label>Nhóm category
             <select name="category_group" id="category-group-select"></select>
           </label>
           <label>Loại quần áo
             <select name="category_type" id="category-type-select"></select>
+          </label>
+          <label>Runtime slot
+            <select name="runtime_slot" id="runtime-slot-select"></select>
           </label>
           <label>Size
             <select name="size_label" id="size-select"></select>
@@ -79,14 +85,26 @@
           <label>Màu sắc
             <select name="color" id="color-select"></select>
           </label>
-          <label>Image path (từ DB)
+          <label>Render mode
+            <select name="render_mode" id="render-mode-select"></select>
+          </label>
+          <label>Image path / preview
             <input name="image_path_preview" id="image-path-preview" type="text" readonly />
+          </label>
+          <label>Model path (Unity / prefab key)
+            <input name="model_path" id="model-path-input" type="text" maxlength="300" placeholder="Ví dụ: outfits/hoodie_blue_v1" />
+          </label>
+          <label>Body compatibility (CSV)
+            <input name="body_compatibility" id="body-compatibility-input" type="text" maxlength="200" placeholder="slim, regular, plus" />
+          </label>
+          <label class="full">Ghi chú runtime
+            <input name="runtime_notes" id="runtime-notes-input" type="text" maxlength="300" placeholder="Ví dụ: ưu tiên avatar nam, cần hide base top" />
           </label>
           <label class="full">Ảnh quần áo (PNG/JPG)
             <input name="file" id="clothing-file" type="file" accept="image/png,image/jpeg" />
           </label>
         </div>
-        <p class="hint small">Khi chọn item có sẵn, hệ thống sẽ tự điền category, size, color và ảnh từ database. Khi tạo item mới, bạn có thể chọn từ dropdown áo/quần, size và màu.</p>
+        <p class="hint small">Khi chọn item có sẵn, hệ thống sẽ tự điền metadata từ database. Khi tạo item mới, bạn có thể tạo item kiểu `texture` như hiện tại, hoặc chuẩn bị metadata `prefab/model_path` để Unity bật outfit 3D thật ở runtime.</p>
       </section>
 
       <section class="card">

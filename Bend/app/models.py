@@ -55,9 +55,26 @@ class ClothingItem(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("user_profiles.id"), nullable=False, index=True)
+    display_name = Column(String(120), nullable=True)
     category = Column(String(50), nullable=False)
+    slot = Column(String(20), nullable=True)
     size_label = Column(String(20), nullable=False)
     color = Column(String(30), nullable=False)
     image_path = Column(String(300), nullable=True)
+    preview_image_path = Column(String(300), nullable=True)
+    model_path = Column(String(300), nullable=True)
+    render_mode = Column(String(20), nullable=False, default="texture")
+    body_compatibility_json = Column(Text, nullable=True)
+    runtime_notes = Column(Text, nullable=True)
 
     owner = relationship("UserProfile", back_populates="clothing_items")
+
+    @property
+    def body_compatibility(self):
+        if not self.body_compatibility_json:
+            return None
+        try:
+            value = json.loads(self.body_compatibility_json)
+        except json.JSONDecodeError:
+            return None
+        return value if isinstance(value, list) else None

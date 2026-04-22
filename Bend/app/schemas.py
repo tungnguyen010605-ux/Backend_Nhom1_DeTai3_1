@@ -48,10 +48,17 @@ class BodyMeasurementResponse(BodyMeasurementCreate):
 
 class ClothingItemCreate(BaseModel):
     user_id: int
+    display_name: str | None = Field(default=None, max_length=120)
     category: str = Field(min_length=2, max_length=50)
+    slot: str | None = Field(default=None, max_length=20)
     size_label: str = Field(min_length=1, max_length=20)
     color: str = Field(min_length=1, max_length=30)
     image_path: str | None = None
+    preview_image_path: str | None = None
+    model_path: str | None = None
+    render_mode: str = Field(default="texture", min_length=3, max_length=20)
+    body_compatibility: list[str] | None = None
+    runtime_notes: str | None = None
 
 
 class ClothingItemResponse(ClothingItemCreate):

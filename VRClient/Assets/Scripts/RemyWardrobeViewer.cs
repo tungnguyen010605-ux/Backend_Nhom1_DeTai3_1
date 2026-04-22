@@ -66,8 +66,8 @@ public class RemyWardrobeViewer : MonoBehaviour
     [Header("Overlay")]
     public bool showOverlay = true;
     public Vector2 overlayPosition = new Vector2(16f, 16f);
-    public float overlayWidth = 430f;
-    public float overlayHeight = 640f;
+    public float overlayWidth = 560f;
+    public float overlayHeight = 760f;
 
     [Header("Preview")]
     public bool preloadPreviewImages = true;
@@ -87,6 +87,7 @@ public class RemyWardrobeViewer : MonoBehaviour
     private GUIStyle _bodyStyle;
     private GUIStyle _buttonStyle;
     private bool _isFetchingCatalog;
+    private bool _pendingCatalogRefresh;
     private string _statusMessage = "Chua tai catalog quan ao.";
 
     void Reset()
@@ -215,7 +216,10 @@ public class RemyWardrobeViewer : MonoBehaviour
         if (!_isFetchingCatalog)
         {
             StartCoroutine(FetchCatalogCoroutine());
+            return;
         }
+
+        _pendingCatalogRefresh = true;
     }
 
     [ContextMenu("Reset Outfit")]
@@ -234,6 +238,7 @@ public class RemyWardrobeViewer : MonoBehaviour
     private IEnumerator FetchCatalogCoroutine()
     {
         _isFetchingCatalog = true;
+        _pendingCatalogRefresh = false;
         _statusMessage = "Dang tai danh sach quan ao...";
 
         string url = backendUrl + "/clothing-items?limit=500";
@@ -250,6 +255,11 @@ public class RemyWardrobeViewer : MonoBehaviour
             {
                 _statusMessage = "Khong tai duoc catalog: " + request.error;
                 _isFetchingCatalog = false;
+
+                if (_pendingCatalogRefresh)
+                {
+                    StartCoroutine(FetchCatalogCoroutine());
+                }
                 yield break;
             }
 
@@ -271,6 +281,11 @@ public class RemyWardrobeViewer : MonoBehaviour
         }
 
         _isFetchingCatalog = false;
+
+        if (_pendingCatalogRefresh)
+        {
+            StartCoroutine(FetchCatalogCoroutine());
+        }
     }
 
     private IEnumerator PreloadPreviewImagesCoroutine()
@@ -799,16 +814,19 @@ public class RemyWardrobeViewer : MonoBehaviour
         _panelStyle.padding = new RectOffset(12, 12, 12, 12);
 
         _headerStyle = new GUIStyle(GUI.skin.label);
-        _headerStyle.fontSize = 18;
+        _headerStyle.fontSize = 24;
         _headerStyle.fontStyle = FontStyle.Bold;
         _headerStyle.normal.textColor = Color.white;
 
         _bodyStyle = new GUIStyle(GUI.skin.label);
         _bodyStyle.wordWrap = true;
+        _bodyStyle.fontSize = 16;
         _bodyStyle.normal.textColor = Color.white;
 
         _buttonStyle = new GUIStyle(GUI.skin.button);
         _buttonStyle.wordWrap = true;
+        _buttonStyle.fontSize = 15;
+        _buttonStyle.padding = new RectOffset(10, 10, 8, 8);
     }
 
     void OnGUI()
@@ -830,12 +848,12 @@ public class RemyWardrobeViewer : MonoBehaviour
         GUILayout.Label(_statusMessage, _bodyStyle);
 
         GUILayout.BeginHorizontal();
-        if (GUILayout.Button(_isFetchingCatalog ? "Dang tai..." : "Refresh Catalog", _buttonStyle, GUILayout.Height(32f)))
+        if (GUILayout.Button(_isFetchingCatalog ? "Dang tai..." : "Refresh Catalog", _buttonStyle, GUILayout.Height(42f)))
         {
             RefreshCatalog();
         }
 
-        if (GUILayout.Button("Reset Outfit", _buttonStyle, GUILayout.Height(32f)))
+        if (GUILayout.Button("Reset Outfit", _buttonStyle, GUILayout.Height(42f)))
         {
             ResetOutfit();
         }
@@ -870,11 +888,11 @@ public class RemyWardrobeViewer : MonoBehaviour
 
         if (preview != null)
         {
-            GUILayout.Label(preview, GUILayout.Width(64f), GUILayout.Height(64f));
+            GUILayout.Label(preview, GUILayout.Width(92f), GUILayout.Height(92f));
         }
         else
         {
-            GUILayout.Box("No\nPreview", GUILayout.Width(64f), GUILayout.Height(64f));
+            GUILayout.Box("No\nPreview", GUILayout.Width(92f), GUILayout.Height(92f));
         }
 
         GUILayout.BeginVertical();
@@ -888,7 +906,7 @@ public class RemyWardrobeViewer : MonoBehaviour
             GUILayout.Label("Model: " + item.model_path, _bodyStyle);
         }
 
-        if (GUILayout.Button("Mac mon nay", _buttonStyle, GUILayout.Height(28f)))
+        if (GUILayout.Button("Mac mon nay", _buttonStyle, GUILayout.Height(38f)))
         {
             ApplyCatalogItem(item);
         }

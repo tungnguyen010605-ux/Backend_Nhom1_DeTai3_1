@@ -17,6 +17,7 @@ const poseVideo = document.getElementById("pose-video");
 const poseCanvas = document.getElementById("pose-canvas");
 const poseStatus = document.getElementById("pose-status");
 const poseSummary = document.getElementById("pose-summary");
+const genderSelect = document.getElementById("gender-select");
 
 const categoryGroupSelect = document.getElementById("category-group-select");
 const categoryTypeSelect = document.getElementById("category-type-select");
@@ -90,6 +91,7 @@ let latestPoseEstimate = null;
 
 const measurementInputs = {
   name: form.querySelector('input[name="name"]'),
+  gender: genderSelect,
   height_cm: form.querySelector('input[name="height_cm"]'),
   chest_cm: form.querySelector('input[name="chest_cm"]'),
   waist_cm: form.querySelector('input[name="waist_cm"]'),
@@ -229,6 +231,9 @@ function fillUserMeasurementFields(user) {
     return;
   }
   measurementInputs.name.value = user.name || "";
+  if (measurementInputs.gender) {
+    measurementInputs.gender.value = user.gender || "male";
+  }
   measurementInputs.height_cm.value = user.height_cm ?? "";
   measurementInputs.chest_cm.value = user.chest_cm ?? "";
   measurementInputs.waist_cm.value = user.waist_cm ?? "";
@@ -358,7 +363,7 @@ async function loadUsers() {
   usersCache = await apiJson("/users?limit=500", { method: "GET" });
   fillSelect(
     existingUserSelect,
-    usersCache.map((u) => ({ value: u.id, label: `#${u.id} - ${u.name}` })),
+    usersCache.map((u) => ({ value: u.id, label: `#${u.id} - ${u.name} (${u.gender === "female" ? "Nữ" : "Nam"})` })),
     "Không có user. Chuyển sang tạo user mới.",
   );
 
@@ -520,8 +525,14 @@ async function resolveUserId(formData) {
     throw new Error("Please enter user name");
   }
 
+  const gender = String(formData.get("gender") || "male").toLowerCase();
+  if (!["male", "female"].includes(gender)) {
+    throw new Error("Please select a valid gender");
+  }
+
   const userPayload = {
     name,
+    gender,
     height_cm: requireNumber(formData, "height_cm", "Please enter valid height"),
     chest_cm: requireNumber(formData, "chest_cm", "Please enter valid chest"),
     waist_cm: requireNumber(formData, "waist_cm", "Please enter valid waist"),
@@ -719,7 +730,8 @@ existingUserSelect.addEventListener("change", async () => {
     const selectedId = Number(existingUserSelect.value);
     const user = usersCache.find((entry) => entry.id === selectedId);
     fillUserMeasurementFields(user);
-    log(`Selected existing user #${existingUserSelect.value}. Clothing catalog remains global across all users.`);
+    const genderText = user && user.gender === "female" ? "Nữ" : "Nam";
+    log(`Selected existing user #${existingUserSelect.value} (${genderText}). Clothing catalog remains global across all users.`);
   } catch (error) {
     log(`Error: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -775,6 +787,9 @@ autoPickClothingBtn.addEventListener("click", async () => {
 async function initialize() {
   initializeDropdowns();
   syncModeVisibility();
+  if (genderSelect && !genderSelect.value) {
+    genderSelect.value = "male";
+  }
   statusLog.textContent = "Ready.";
 
   try {

@@ -13,18 +13,54 @@ public class TaskStatusResponse
 }
 
 [System.Serializable]
-public class TinyItem { public int id; }
+public class UserListItem
+{
+    public int id;
+    public string name;
+    public string gender;
+}
+
+[System.Serializable]
+public class ClothingListItem
+{
+    public int id;
+    public string display_name;
+    public string size_label;
+    public string color;
+    public string slot;
+}
 
 [System.Serializable]
 public class JsonArrayWrapper<T> { public T[] Items; }
+
+[System.Serializable]
+public enum AvatarGender
+{
+    Male,
+    Female,
+}
 
 public class VRBackendClient : MonoBehaviour
 {
     [Header("Backend Settings")]
     public string backendUrl = "http://localhost:8000";
-    public int testUserId = 1;         // Dùng ID giả để test
-    public int testClothingId = 1;     // Dùng ID giả để test
     public bool autoHealthCheckOnStart = true;
+
+    [Header("Gender Selection")]
+    public AvatarGender selectedGender = AvatarGender.Male;
+
+    [Header("User Selection")]
+    public int selectedUserId = -1;
+    public int selectedClothingId = -1;
+
+    [Header("UI References")]
+    public RemyWardrobeViewer wardrobeViewer;
+
+    [Header("Overlay UI")]
+    public bool showOverlay = true;
+    public Vector2 overlayPosition = new Vector2(20f, 20f);
+    public float overlayWidth = 500f;
+    public float overlayHeight = 640f;
 
     [Header("Avatar Target")]
     [Tooltip("Kéo thả Mesh của cái Áo (Tops) vào đây")]
@@ -35,6 +71,14 @@ public class VRBackendClient : MonoBehaviour
     [Header("Optional Helpers")]
     public Transform avatarRoot;       // Nếu có model cha, script sẽ tự tìm renderer trong nhánh này.
 
+    private UserListItem[] _userList;
+    private ClothingListItem[] _clothingList;
+    private RemyWardrobeViewer[] _allWardrobeViewers;
+    private Vector2 _userScroll;
+    private Vector2 _clothingScroll;
+    private GUIStyle _titleStyle;
+    private GUIStyle _sectionStyle;
+    private GUIStyle _itemButtonStyle;
     bool _isWorkflowRunning;
 
     void Reset()
@@ -50,6 +94,210 @@ public class VRBackendClient : MonoBehaviour
         }
     }
 
+    private void EnsureWardrobeViewerReference()
+    {
+        CacheWardrobeViewers();
+        if (_allWardrobeViewers != null && _allWardrobeViewers.Length > 0)
+        {
+            wardrobeViewer = ResolveWardrobeViewerForGender();
+        }
+
+        if (wardrobeViewer == null)
+        {
+            wardrobeViewer = FindFirstObjectByType<RemyWardrobeViewer>();
+        }
+    }
+
+    private void CacheWardrobeViewers()
+    {
+        if (_allWardrobeViewers != null && _allWardrobeViewers.Length > 0)
+        {
+            return;
+        }
+
+        _allWardrobeViewers = FindObjectsByType<RemyWardrobeViewer>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+    }
+
+    private RemyWardrobeViewer ResolveWardrobeViewerForGender()
+    {
+        if (_allWardrobeViewers == null || _allWardrobeViewers.Length == 0)
+        {
+            return null;
+        }
+
+        RemyWardrobeViewer fallback = _allWardrobeViewers[0];
+        string desiredName = selectedGender == AvatarGender.Female ? "megan" : "remy";
+
+        for (int i = 0; i < _allWardrobeViewers.Length; i++)
+        {
+            RemyWardrobeViewer viewer = _allWardrobeViewers[i];
+            if (viewer == null)
+            {
+                continue;
+            }
+
+            viewer.autoFetchCatalogOnStart = false;
+
+            string objectName = viewer.gameObject.name.ToLowerInvariant();
+            string rootName = viewer.avatarRoot != null ? viewer.avatarRoot.name.ToLowerInvariant() : string.Empty;
+            if (objectName.Contains(desiredName) || rootName.Contains(desiredName))
+            {
+                return viewer;
+            }
+        }
+
+        return fallback;
+    }
+
+    private void ApplySelectedGender()
+    {
+        CacheWardrobeViewers();
+        if (_allWardrobeViewers == null || _allWardrobeViewers.Length == 0)
+        {
+            return;
+        }
+
+        RemyWardrobeViewer activeViewer = ResolveWardrobeViewerForGender();
+        wardrobeViewer = activeViewer;
+
+        for (int i = 0; i < _allWardrobeViewers.Length; i++)
+        {
+            RemyWardrobeViewer viewer = _allWardrobeViewers[i];
+            if (viewer == null)
+            {
+                continue;
+            }
+
+            viewer.autoFetchCatalogOnStart = false;
+            bool shouldBeActive = viewer == activeViewer;
+            if (viewer.gameObject.activeSelf != shouldBeActive)
+            {
+                viewer.gameObject.SetActive(shouldBeActive);
+            }
+        }
+
+        ApplyUserFilterToWardrobe();
+    }
+
+    private void ApplyUserFilterToWardrobe()
+    {
+        EnsureWardrobeViewerReference();
+        if (wardrobeViewer == null)
+        {
+            Debug.LogWarning("Khong tim thay RemyWardrobeViewer de dong bo user filter.");
+            return;
+        }
+
+        wardrobeViewer.optionalUserIdFilter = selectedUserId;
+        wardrobeViewer.RefreshCatalog();
+    }
+
+    private void EnsureGuiStyles()
+    {
+        if (_titleStyle != null)
+        {
+            return;
+        }
+
+        _titleStyle = new GUIStyle(GUI.skin.label);
+        _titleStyle.fontSize = 20;
+        _titleStyle.fontStyle = FontStyle.Bold;
+
+        _sectionStyle = new GUIStyle(GUI.skin.label);
+        _sectionStyle.fontSize = 16;
+        _sectionStyle.fontStyle = FontStyle.Bold;
+
+        _itemButtonStyle = new GUIStyle(GUI.skin.button);
+        _itemButtonStyle.fontSize = 14;
+        _itemButtonStyle.alignment = TextAnchor.MiddleLeft;
+        _itemButtonStyle.padding = new RectOffset(10, 10, 8, 8);
+    }
+
+    private string GetGenderLabel(AvatarGender gender)
+    {
+        return gender == AvatarGender.Female ? "Nu" : "Nam";
+    }
+
+    private string BuildUserLabel(UserListItem user)
+    {
+        string userName = user != null ? user.name : string.Empty;
+        string genderLabel = "Nam";
+        if (user != null && !string.IsNullOrWhiteSpace(user.gender) && user.gender.ToLowerInvariant() == "female")
+        {
+            genderLabel = "Nu";
+        }
+
+        if (string.IsNullOrWhiteSpace(userName))
+        {
+            return "User #" + (user != null ? user.id.ToString() : "?") + " (" + genderLabel + ")";
+        }
+
+        return userName + "  (#" + user.id + ", " + genderLabel + ")";
+    }
+
+    private void SyncGenderFromUser(UserListItem user)
+    {
+        if (user == null || string.IsNullOrWhiteSpace(user.gender))
+        {
+            return;
+        }
+
+        string normalized = user.gender.ToLowerInvariant();
+        AvatarGender newGender = normalized == "female" ? AvatarGender.Female : AvatarGender.Male;
+        if (newGender != selectedGender)
+        {
+            selectedGender = newGender;
+            ApplySelectedGender();
+        }
+    }
+
+    private string BuildClothingLabel(ClothingListItem item)
+    {
+        if (item == null)
+        {
+            return "Item #?";
+        }
+
+        string name = string.IsNullOrWhiteSpace(item.display_name) ? "Item #" + item.id : item.display_name;
+        string size = string.IsNullOrWhiteSpace(item.size_label) ? "-" : item.size_label;
+        string color = string.IsNullOrWhiteSpace(item.color) ? "-" : item.color;
+        return name + " | Size " + size + " | Mau " + color;
+    }
+
+    private Rect ResolveOverlayRect()
+    {
+        float x = overlayPosition.x;
+        float y = overlayPosition.y;
+
+        EnsureWardrobeViewerReference();
+        if (wardrobeViewer != null && wardrobeViewer.showOverlay)
+        {
+            Rect remyRect = new Rect(
+                wardrobeViewer.overlayPosition.x,
+                wardrobeViewer.overlayPosition.y,
+                wardrobeViewer.overlayWidth,
+                wardrobeViewer.overlayHeight
+            );
+            Rect currentRect = new Rect(x, y, overlayWidth, overlayHeight);
+
+            if (currentRect.Overlaps(remyRect))
+            {
+                x = remyRect.xMax + 20f;
+            }
+        }
+
+        float maxX = Mathf.Max(0f, Screen.width - overlayWidth - 12f);
+        x = Mathf.Clamp(x, 12f, maxX);
+        y = Mathf.Max(12f, y);
+        return new Rect(x, y, overlayWidth, overlayHeight);
+    }
+
+    void Awake()
+    {
+        EnsureWardrobeViewerReference();
+        ApplySelectedGender();
+    }
+
     void Start()
     {
         if (clothingRenderer == null && pantsRenderer == null)
@@ -57,12 +305,153 @@ public class VRBackendClient : MonoBehaviour
             TryAutoAssignAvatarRenderer();
         }
 
+        EnsureWardrobeViewerReference();
+
         Debug.Log("🔌 Khởi động VR Client...");
 
         if (autoHealthCheckOnStart)
         {
             StartCoroutine(TestHealthCheck());
         }
+
+        // Fetch danh sách user khi khởi động
+        StartCoroutine(FetchUserList());
+
+        if (selectedUserId > 0)
+        {
+            ApplyUserFilterToWardrobe();
+            StartCoroutine(FetchClothingByUser(selectedUserId));
+        }
+    }
+
+    void OnGUI()
+    {
+        if (!showOverlay)
+        {
+            return;
+        }
+
+        EnsureGuiStyles();
+
+        Rect overlayRect = ResolveOverlayRect();
+        GUILayout.BeginArea(overlayRect, GUI.skin.box);
+        GUILayout.Label("VR Backend Client", _titleStyle);
+
+        GUILayout.Space(6f);
+        GUILayout.Label("Gioi tinh:", _sectionStyle);
+        GUILayout.BeginHorizontal();
+        if (GUILayout.Toggle(selectedGender == AvatarGender.Male, "Nam", GUI.skin.button, GUILayout.Height(34f)))
+        {
+            if (selectedGender != AvatarGender.Male)
+            {
+                selectedGender = AvatarGender.Male;
+                ApplySelectedGender();
+            }
+        }
+
+        if (GUILayout.Toggle(selectedGender == AvatarGender.Female, "Nu", GUI.skin.button, GUILayout.Height(34f)))
+        {
+            if (selectedGender != AvatarGender.Female)
+            {
+                selectedGender = AvatarGender.Female;
+                ApplySelectedGender();
+            }
+        }
+        GUILayout.EndHorizontal();
+
+        GUILayout.Space(8f);
+        GUILayout.Label("Chon User:", _sectionStyle);
+
+        if (_userList != null && _userList.Length > 0)
+        {
+            _userScroll = GUILayout.BeginScrollView(_userScroll, GUILayout.Height(220f));
+            for (int i = 0; i < _userList.Length; i++)
+            {
+                UserListItem user = _userList[i];
+                bool isSelected = user != null && user.id == selectedUserId;
+                Color oldColor = GUI.backgroundColor;
+                if (isSelected)
+                {
+                    GUI.backgroundColor = new Color(0.45f, 0.68f, 0.95f, 1f);
+                }
+
+                if (GUILayout.Button(BuildUserLabel(user), _itemButtonStyle, GUILayout.Height(40f)))
+                {
+                    if (user != null && selectedUserId != user.id)
+                    {
+                        selectedUserId = user.id;
+                        selectedClothingId = -1;
+                        SyncGenderFromUser(user);
+                        ApplyUserFilterToWardrobe();
+                        StartCoroutine(FetchClothingByUser(selectedUserId));
+                    }
+                }
+
+                GUI.backgroundColor = oldColor;
+                GUILayout.Space(4f);
+            }
+            GUILayout.EndScrollView();
+        }
+        else
+        {
+            GUILayout.Label("Dang tai danh sach user...");
+        }
+
+        GUILayout.Space(10f);
+        GUILayout.Label("Quan ao theo user da chon:", _sectionStyle);
+
+        if (selectedUserId > 0)
+        {
+            if (_clothingList != null && _clothingList.Length > 0)
+            {
+                _clothingScroll = GUILayout.BeginScrollView(_clothingScroll, GUILayout.Height(250f));
+                for (int i = 0; i < _clothingList.Length; i++)
+                {
+                    ClothingListItem cloth = _clothingList[i];
+                    bool isSelected = cloth != null && cloth.id == selectedClothingId;
+                    Color oldColor = GUI.backgroundColor;
+                    if (isSelected)
+                    {
+                        GUI.backgroundColor = new Color(0.54f, 0.86f, 0.64f, 1f);
+                    }
+
+                    if (GUILayout.Button(BuildClothingLabel(cloth), _itemButtonStyle, GUILayout.Height(44f)))
+                    {
+                        if (cloth != null)
+                        {
+                            selectedClothingId = cloth.id;
+                        }
+                    }
+
+                    GUI.backgroundColor = oldColor;
+                    GUILayout.Space(4f);
+                }
+                GUILayout.EndScrollView();
+            }
+            else
+            {
+                GUILayout.Label("User nay khong co quan ao.");
+            }
+
+            GUILayout.Space(10f);
+            if (GUILayout.Button("Chay Fitting Workflow", GUILayout.Height(48f)))
+            {
+                if (selectedClothingId > 0)
+                {
+                    RunFittingWorkflow();
+                }
+                else
+                {
+                    Debug.LogWarning("Vui long chon 1 mon quan ao truoc.");
+                }
+            }
+        }
+        else
+        {
+            GUILayout.Label("Hay chon user de hien thi danh sach quan ao.");
+        }
+
+        GUILayout.EndArea();
     }
 
     public void TryAutoAssignAvatarRenderer()
@@ -119,7 +508,7 @@ public class VRBackendClient : MonoBehaviour
 
     // 💡 Điểm ăn tiền: Bạn nhấp chuột phải vào script này ở Inspector sẽ thấy nút "Test Request Fitting"
     [ContextMenu("Test Request Fitting")]
-    public void RunTestFittingWorkflow()
+    public void RunFittingWorkflow()
     {
         if (_isWorkflowRunning)
         {
@@ -127,20 +516,13 @@ public class VRBackendClient : MonoBehaviour
             return;
         }
 
-        StartCoroutine(ExecuteFittingWorkflow(testUserId, testClothingId));
-    }
-
-    // 🎲 Thưởng thêm: Tính năng tự động quét CSDL và lấy ID ngẫu nhiên!
-    [ContextMenu("Test Random User & Cloth")]
-    public void TestRandomFromDB()
-    {
-        if (_isWorkflowRunning)
+        if (selectedUserId == -1 || selectedClothingId == -1)
         {
-            Debug.LogWarning("⏳ Đang có workflow chạy rồi, chờ xíu nha.");
+            Debug.LogError("❌ Vui lòng chọn User và Quần Áo từ UI.");
             return;
         }
 
-        StartCoroutine(FetchRandomAndFit());
+        StartCoroutine(ExecuteFittingWorkflow(selectedUserId, selectedClothingId));
     }
 
     [ContextMenu("Test Pose Sync (Image -> Rig)")]
@@ -156,11 +538,8 @@ public class VRBackendClient : MonoBehaviour
         poseSync.EstimatePoseAndApplyToRig();
     }
 
-    IEnumerator FetchRandomAndFit()
+    IEnumerator FetchUserList()
     {
-        int pickedUser = -1;
-        int pickedCloth = -1;
-
         Debug.Log("🔍 Đang tải danh sách User từ Database...");
         using (UnityWebRequest req = UnityWebRequest.Get(backendUrl + "/users"))
         {
@@ -168,42 +547,98 @@ public class VRBackendClient : MonoBehaviour
             if (req.result == UnityWebRequest.Result.Success)
             {
                 string json = "{\"Items\":" + req.downloadHandler.text + "}";
-                var users = JsonUtility.FromJson<JsonArrayWrapper<TinyItem>>(json);
-                if (users != null && users.Items.Length > 0)
+                var wrapper = JsonUtility.FromJson<JsonArrayWrapper<UserListItem>>(json);
+                if (wrapper != null && wrapper.Items.Length > 0)
                 {
-                    pickedUser = users.Items[Random.Range(0, users.Items.Length)].id;
+                    _userList = wrapper.Items;
+                    Debug.Log($"<color=green>✅ Tải được {_userList.Length} users.</color>");
+
+                    bool hasCurrentSelection = false;
+                    for (int i = 0; i < _userList.Length; i++)
+                    {
+                        if (_userList[i] != null && _userList[i].id == selectedUserId)
+                        {
+                            hasCurrentSelection = true;
+                            break;
+                        }
+                    }
+
+                    if (!hasCurrentSelection)
+                    {
+                        selectedUserId = _userList[0].id;
+                    }
+
+                    UserListItem selectedUser = null;
+                    for (int i = 0; i < _userList.Length; i++)
+                    {
+                        if (_userList[i] != null && _userList[i].id == selectedUserId)
+                        {
+                            selectedUser = _userList[i];
+                            break;
+                        }
+                    }
+
+                    SyncGenderFromUser(selectedUser);
+
+                    selectedClothingId = -1;
+                    ApplySelectedGender();
+                    StartCoroutine(FetchClothingByUser(selectedUserId));
+                }
+                else
+                {
+                    _userList = new UserListItem[0];
                 }
             }
+            else
+            {
+                Debug.LogError("❌ Lỗi tải danh sách user: " + req.error);
+            }
         }
+    }
 
-        Debug.Log("🔍 Đang tải danh sách Clothing từ Database...");
-        using (UnityWebRequest req = UnityWebRequest.Get(backendUrl + "/clothing-items"))
+    IEnumerator FetchClothingByUser(int userId)
+    {
+        Debug.Log($"🔍 Đang tải quần áo của User {userId}...");
+        using (UnityWebRequest req = UnityWebRequest.Get($"{backendUrl}/clothing-items?limit=500&user_id={userId}"))
         {
             yield return req.SendWebRequest();
             if (req.result == UnityWebRequest.Result.Success)
             {
                 string json = "{\"Items\":" + req.downloadHandler.text + "}";
-                var clothes = JsonUtility.FromJson<JsonArrayWrapper<TinyItem>>(json);
-                if (clothes != null && clothes.Items.Length > 0)
+                var wrapper = JsonUtility.FromJson<JsonArrayWrapper<ClothingListItem>>(json);
+                if (wrapper != null && wrapper.Items.Length > 0)
                 {
-                    pickedCloth = clothes.Items[Random.Range(0, clothes.Items.Length)].id;
+                    _clothingList = wrapper.Items;
+                    Debug.Log($"<color=green>✅ Tải được {_clothingList.Length} quần áo.</color>");
+
+                    bool hasCurrentSelection = false;
+                    for (int i = 0; i < _clothingList.Length; i++)
+                    {
+                        if (_clothingList[i] != null && _clothingList[i].id == selectedClothingId)
+                        {
+                            hasCurrentSelection = true;
+                            break;
+                        }
+                    }
+
+                    if (!hasCurrentSelection)
+                    {
+                        selectedClothingId = _clothingList[0].id;
+                    }
+                }
+                else
+                {
+                    _clothingList = new ClothingListItem[0];
+                    selectedClothingId = -1;
+                    Debug.LogWarning($"⚠️ User {userId} không có quần áo nào.");
                 }
             }
-        }
-
-        if (pickedUser != -1 && pickedCloth != -1)
-        {
-            Debug.Log($"<color=green>🎲 BỐC THĂM THÀNH CÔNG: Chốt đơn User [{pickedUser}] mặc áo [{pickedCloth}]</color>");
-            testUserId = pickedUser;
-            testClothingId = pickedCloth;
-            StartCoroutine(ExecuteFittingWorkflow(pickedUser, pickedCloth));
-        }
-        else
-        {
-            Debug.LogError("❌ Không lấy được dữ liệu. Bạn hãy vào http://localhost:8000/ui tạo vài cái đi nha.");
+            else
+            {
+                Debug.LogError("❌ Lỗi tải quần áo: " + req.error);
+            }
         }
     }
-
 
     IEnumerator ExecuteFittingWorkflow(int userId, int clothingId)
     {

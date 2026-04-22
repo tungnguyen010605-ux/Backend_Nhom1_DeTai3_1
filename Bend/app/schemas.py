@@ -16,6 +16,7 @@ class PoseKeypointPayload(BaseModel):
 
 class UserCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
+    gender: Literal["male", "female"] = "male"
     height_cm: float = Field(gt=50, lt=260)
     chest_cm: float = Field(gt=30, lt=200)
     waist_cm: float = Field(gt=30, lt=200)

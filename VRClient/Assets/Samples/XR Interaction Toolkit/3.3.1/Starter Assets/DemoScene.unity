@@ -149,9 +149,14 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VRBackendClient
   backendUrl: http://localhost:8000
-  testUserId: 1
-  testClothingId: 1
   autoHealthCheckOnStart: 1
+  selectedUserId: -1
+  selectedClothingId: -1
+  wardrobeViewer: {fileID: 0}
+  showOverlay: 1
+  overlayPosition: {x: 20, y: 20}
+  overlayWidth: 500
+  overlayHeight: 640
   clothingRenderer: {fileID: 577427746}
   pantsRenderer: {fileID: 730896365}
   avatarRoot: {fileID: 1985010459}
@@ -202,6 +207,8 @@ MonoBehaviour:
   overlayWidth: 430
   overlayHeight: 640
   preloadPreviewImages: 1
+  preferRuntimeBindings: 1
+  runtimeBindings: []
 --- !u!4 &100946591 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 86b390eebd4c37648b4796944aeda62f, type: 3}
@@ -459,6 +466,10 @@ PrefabInstance:
     - target: {fileID: 919132149155446097, guid: a5ea765e268b8d74a98f297718dd83e5, type: 3}
       propertyPath: m_Name
       value: Josh
+      objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: a5ea765e268b8d74a98f297718dd83e5, type: 3}
+      propertyPath: m_IsActive
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3183749884578473501, guid: a5ea765e268b8d74a98f297718dd83e5, type: 3}
       propertyPath: m_LocalRotation.x
@@ -795,6 +806,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Megan
       objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: 86b390eebd4c37648b4796944aeda62f, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 1561428799287432917, guid: 86b390eebd4c37648b4796944aeda62f, type: 3}
       propertyPath: m_LocalRotation.w
       value: 0.0028330365
@@ -959,6 +974,8 @@ MonoBehaviour:
   overlayWidth: 430
   overlayHeight: 640
   preloadPreviewImages: 1
+  preferRuntimeBindings: 1
+  runtimeBindings: []
 --- !u!1 &1993262853 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: a5ea765e268b8d74a98f297718dd83e5, type: 3}
@@ -991,6 +1008,8 @@ MonoBehaviour:
   overlayWidth: 430
   overlayHeight: 640
   preloadPreviewImages: 1
+  preferRuntimeBindings: 1
+  runtimeBindings: []
 --- !u!4 &1993262856 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: a5ea765e268b8d74a98f297718dd83e5, type: 3}

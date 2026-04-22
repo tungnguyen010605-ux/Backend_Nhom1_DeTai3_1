@@ -9,16 +9,34 @@ public class ClothingCatalogItem
 {
     public int id;
     public int user_id;
+    public string display_name;
     public string category;
+    public string slot;
     public string size_label;
     public string color;
     public string image_path;
+    public string preview_image_path;
+    public string model_path;
+    public string render_mode;
+    public string[] body_compatibility;
+    public string runtime_notes;
 }
 
 [Serializable]
 public class ClothingCatalogWrapper
 {
     public ClothingCatalogItem[] Items;
+}
+
+[Serializable]
+public class WardrobeRuntimeBinding
+{
+    public string modelPath;
+    public string slot = "top";
+    public GameObject rootObject;
+    public Renderer previewRenderer;
+    public int previewMaterialIndex;
+    public bool hideBaseRenderer = true;
 }
 
 public class RemyWardrobeViewer : MonoBehaviour
@@ -54,6 +72,10 @@ public class RemyWardrobeViewer : MonoBehaviour
     [Header("Preview")]
     public bool preloadPreviewImages = true;
 
+    [Header("3D Outfit Runtime")]
+    public bool preferRuntimeBindings = true;
+    public List<WardrobeRuntimeBinding> runtimeBindings = new List<WardrobeRuntimeBinding>();
+
     private readonly List<ClothingCatalogItem> _items = new List<ClothingCatalogItem>();
     private readonly Dictionary<int, Texture2D> _previewTextures = new Dictionary<int, Texture2D>();
     private readonly HashSet<int> _requestedPreviewIds = new HashSet<int>();
@@ -84,6 +106,10 @@ public class RemyWardrobeViewer : MonoBehaviour
     {
         AutoAssignAvatarTargets();
         CaptureDefaultTextures();
+        DisableAllRuntimeBindings();
+        SetBaseRendererState(WardrobeSlot.Top, true);
+        SetBaseRendererState(WardrobeSlot.Bottom, true);
+        SetBaseRendererState(WardrobeSlot.Shoes, true);
 
         if (autoFetchCatalogOnStart)
         {
@@ -195,6 +221,10 @@ public class RemyWardrobeViewer : MonoBehaviour
     [ContextMenu("Reset Outfit")]
     public void ResetOutfit()
     {
+        DisableAllRuntimeBindings();
+        SetBaseRendererState(WardrobeSlot.Top, true);
+        SetBaseRendererState(WardrobeSlot.Bottom, true);
+        SetBaseRendererState(WardrobeSlot.Shoes, true);
         RestoreDefaultTexture(topRenderer, topMaterialIndex);
         RestoreDefaultTexture(bottomRenderer, bottomMaterialIndex);
         RestoreDefaultTexture(shoesRenderer, shoesMaterialIndex);
@@ -248,7 +278,7 @@ public class RemyWardrobeViewer : MonoBehaviour
         for (int i = 0; i < _items.Count; i++)
         {
             ClothingCatalogItem item = _items[i];
-            if (item == null || string.IsNullOrWhiteSpace(item.image_path))
+            if (item == null || string.IsNullOrWhiteSpace(GetPreviewPath(item)))
             {
                 continue;
             }
@@ -264,13 +294,14 @@ public class RemyWardrobeViewer : MonoBehaviour
 
     private IEnumerator DownloadPreviewTextureCoroutine(ClothingCatalogItem item)
     {
-        if (item == null || string.IsNullOrWhiteSpace(item.image_path))
+        string previewPath = GetPreviewPath(item);
+        if (item == null || string.IsNullOrWhiteSpace(previewPath))
         {
             yield break;
         }
 
         _requestedPreviewIds.Add(item.id);
-        using (UnityWebRequest request = UnityWebRequestTexture.GetTexture(BuildAssetUrl(item.image_path)))
+        using (UnityWebRequest request = UnityWebRequestTexture.GetTexture(BuildAssetUrl(previewPath)))
         {
             yield return request.SendWebRequest();
 
@@ -326,13 +357,25 @@ public class RemyWardrobeViewer : MonoBehaviour
             return;
         }
 
-        if (!_previewTextures.TryGetValue(item.id, out Texture2D texture) || texture == null)
+        Texture2D previewTexture = null;
+        _previewTextures.TryGetValue(item.id, out previewTexture);
+
+        if (TryApplyRuntimeBinding(item, previewTexture))
+        {
+            if (previewTexture == null && !string.IsNullOrWhiteSpace(GetPreviewPath(item)))
+            {
+                StartCoroutine(DownloadPreviewTextureCoroutine(item));
+            }
+            return;
+        }
+
+        if (previewTexture == null)
         {
             StartCoroutine(DownloadAndApplyItemCoroutine(item));
             return;
         }
 
-        ApplyItemTexture(item, texture);
+        ApplyItemTexture(item, previewTexture);
     }
 
     private IEnumerator DownloadAndApplyItemCoroutine(ClothingCatalogItem item)
@@ -351,8 +394,24 @@ public class RemyWardrobeViewer : MonoBehaviour
 
     private void ApplyItemTexture(ClothingCatalogItem item, Texture2D texture)
     {
-        WardrobeSlot slot = ResolveSlot(item.category);
+        WardrobeSlot slot = ResolveSlot(item.slot, item.category);
         bool applied = false;
+
+        DeactivateRuntimeBindingsForSlot(slot);
+        if (slot == WardrobeSlot.Top || slot == WardrobeSlot.Unknown)
+        {
+            SetBaseRendererState(WardrobeSlot.Top, true);
+        }
+
+        if (slot == WardrobeSlot.Bottom || slot == WardrobeSlot.Unknown)
+        {
+            SetBaseRendererState(WardrobeSlot.Bottom, true);
+        }
+
+        if (slot == WardrobeSlot.Shoes || slot == WardrobeSlot.Unknown)
+        {
+            SetBaseRendererState(WardrobeSlot.Shoes, true);
+        }
 
         if (slot == WardrobeSlot.Top || slot == WardrobeSlot.Unknown)
         {
@@ -375,7 +434,7 @@ public class RemyWardrobeViewer : MonoBehaviour
         }
 
         _statusMessage = applied
-            ? "Dang mac item #" + item.id + " (" + SafeLabel(item.category) + ")."
+            ? "Dang mac item #" + item.id + " (" + GetItemLabel(item) + ")."
             : "Chua ap duoc texture. Hay kiem tra renderer/material index.";
 
         Debug.Log(
@@ -387,6 +446,126 @@ public class RemyWardrobeViewer : MonoBehaviour
             " | Shoes=" + DescribeRenderer(shoesRenderer, shoesMaterialIndex),
             this
         );
+    }
+
+    private bool TryApplyRuntimeBinding(ClothingCatalogItem item, Texture2D previewTexture)
+    {
+        if (!preferRuntimeBindings || item == null)
+        {
+            return false;
+        }
+
+        string renderMode = string.IsNullOrWhiteSpace(item.render_mode)
+            ? string.Empty
+            : item.render_mode.ToLowerInvariant();
+        if (renderMode != "prefab" && string.IsNullOrWhiteSpace(item.model_path))
+        {
+            return false;
+        }
+
+        WardrobeSlot slot = ResolveSlot(item.slot, item.category);
+        WardrobeRuntimeBinding binding = FindRuntimeBinding(item.model_path, slot);
+        if (binding == null || binding.rootObject == null)
+        {
+            if (renderMode == "prefab")
+            {
+                _statusMessage = "Item #" + item.id + " co model_path nhung Unity chua map runtime binding.";
+            }
+            return false;
+        }
+
+        DeactivateRuntimeBindingsForSlot(slot);
+        binding.rootObject.SetActive(true);
+        SetBaseRendererState(slot, !binding.hideBaseRenderer);
+
+        if (previewTexture != null && binding.previewRenderer != null)
+        {
+            ApplyTexture(binding.previewRenderer, binding.previewMaterialIndex, previewTexture);
+        }
+
+        _statusMessage = "Da bat outfit 3D cho item #" + item.id + " (" + GetItemLabel(item) + ").";
+        return true;
+    }
+
+    private WardrobeRuntimeBinding FindRuntimeBinding(string modelPath, WardrobeSlot slot)
+    {
+        string normalizedModelPath = NormalizeKey(modelPath);
+        for (int i = 0; i < runtimeBindings.Count; i++)
+        {
+            WardrobeRuntimeBinding binding = runtimeBindings[i];
+            if (binding == null || binding.rootObject == null)
+            {
+                continue;
+            }
+
+            WardrobeSlot bindingSlot = ResolveSlot(binding.slot, null);
+            if (slot != WardrobeSlot.Unknown && bindingSlot != WardrobeSlot.Unknown && bindingSlot != slot)
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrEmpty(normalizedModelPath) && NormalizeKey(binding.modelPath) == normalizedModelPath)
+            {
+                return binding;
+            }
+        }
+
+        return null;
+    }
+
+    private void DisableAllRuntimeBindings()
+    {
+        for (int i = 0; i < runtimeBindings.Count; i++)
+        {
+            WardrobeRuntimeBinding binding = runtimeBindings[i];
+            if (binding != null && binding.rootObject != null)
+            {
+                binding.rootObject.SetActive(false);
+            }
+        }
+    }
+
+    private void DeactivateRuntimeBindingsForSlot(WardrobeSlot slot)
+    {
+        for (int i = 0; i < runtimeBindings.Count; i++)
+        {
+            WardrobeRuntimeBinding binding = runtimeBindings[i];
+            if (binding == null || binding.rootObject == null)
+            {
+                continue;
+            }
+
+            WardrobeSlot bindingSlot = ResolveSlot(binding.slot, null);
+            if (slot == WardrobeSlot.Unknown || bindingSlot == WardrobeSlot.Unknown || bindingSlot == slot)
+            {
+                binding.rootObject.SetActive(false);
+            }
+        }
+    }
+
+    private void SetBaseRendererState(WardrobeSlot slot, bool enabled)
+    {
+        switch (slot)
+        {
+            case WardrobeSlot.Top:
+                if (topRenderer != null)
+                {
+                    topRenderer.enabled = enabled;
+                }
+                break;
+            case WardrobeSlot.Bottom:
+                if (bottomRenderer != null)
+                {
+                    bottomRenderer.enabled = enabled;
+                }
+                break;
+            case WardrobeSlot.Shoes:
+                if (shoesRenderer != null)
+                {
+                    shoesRenderer.enabled = enabled;
+                }
+                break;
+        }
     }
 
     private bool ApplyTexture(Renderer renderer, int materialIndex, Texture texture)
@@ -471,6 +650,28 @@ public class RemyWardrobeViewer : MonoBehaviour
         return material.mainTexture as Texture2D;
     }
 
+    private static string GetPreviewPath(ClothingCatalogItem item)
+    {
+        if (item == null)
+        {
+            return string.Empty;
+        }
+
+        return string.IsNullOrWhiteSpace(item.preview_image_path)
+            ? item.image_path
+            : item.preview_image_path;
+    }
+
+    private static string GetItemLabel(ClothingCatalogItem item)
+    {
+        if (item == null)
+        {
+            return "unknown";
+        }
+
+        return SafeLabel(string.IsNullOrWhiteSpace(item.display_name) ? item.category : item.display_name);
+    }
+
     private string BuildAssetUrl(string imagePath)
     {
         if (string.IsNullOrWhiteSpace(imagePath))
@@ -511,8 +712,31 @@ public class RemyWardrobeViewer : MonoBehaviour
         return false;
     }
 
-    private static WardrobeSlot ResolveSlot(string category)
+    private static string NormalizeKey(string value)
     {
+        return string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : value.Trim().Replace('\\', '/').ToLowerInvariant();
+    }
+
+    private static WardrobeSlot ResolveSlot(string explicitSlot, string category)
+    {
+        string normalizedSlot = string.IsNullOrWhiteSpace(explicitSlot) ? string.Empty : explicitSlot.ToLowerInvariant();
+        if (normalizedSlot.Contains("top") || normalizedSlot.Contains("shirt"))
+        {
+            return WardrobeSlot.Top;
+        }
+
+        if (normalizedSlot.Contains("bottom") || normalizedSlot.Contains("pant") || normalizedSlot.Contains("leg"))
+        {
+            return WardrobeSlot.Bottom;
+        }
+
+        if (normalizedSlot.Contains("shoe") || normalizedSlot.Contains("foot"))
+        {
+            return WardrobeSlot.Shoes;
+        }
+
         string normalized = string.IsNullOrWhiteSpace(category) ? string.Empty : category.ToLowerInvariant();
 
         if (normalized.Contains("shirt") || normalized.Contains("top") || normalized.Contains("tee") ||
@@ -648,10 +872,15 @@ public class RemyWardrobeViewer : MonoBehaviour
         }
 
         GUILayout.BeginVertical();
-        GUILayout.Label("#" + item.id + "  " + SafeLabel(item.category), _bodyStyle);
+        GUILayout.Label("#" + item.id + "  " + GetItemLabel(item), _bodyStyle);
         GUILayout.Label("Mau: " + SafeLabel(item.color), _bodyStyle);
         GUILayout.Label("Size: " + SafeLabel(item.size_label), _bodyStyle);
-        GUILayout.Label("Slot: " + ResolveSlot(item.category), _bodyStyle);
+        GUILayout.Label("Slot: " + ResolveSlot(item.slot, item.category), _bodyStyle);
+        GUILayout.Label("Mode: " + SafeLabel(item.render_mode), _bodyStyle);
+        if (!string.IsNullOrWhiteSpace(item.model_path))
+        {
+            GUILayout.Label("Model: " + item.model_path, _bodyStyle);
+        }
 
         if (GUILayout.Button("Mac mon nay", _buttonStyle, GUILayout.Height(28f)))
         {

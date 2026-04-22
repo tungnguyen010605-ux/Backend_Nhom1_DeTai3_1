@@ -101,6 +101,14 @@ async def lifespan(app: FastAPI):
 
     Base.metadata.create_all(bind=engine)
     _ensure_sqlite_column("body_measurements", "keypoints_json", "TEXT")
+    _ensure_sqlite_column("clothing_items", "display_name", "VARCHAR(120)")
+    _ensure_sqlite_column("clothing_items", "slot", "VARCHAR(20)")
+    _ensure_sqlite_column("clothing_items", "preview_image_path", "VARCHAR(300)")
+    _ensure_sqlite_column("clothing_items", "model_path", "VARCHAR(300)")
+    _ensure_sqlite_column("clothing_items", "render_mode", "VARCHAR(20) DEFAULT 'texture'")
+    _ensure_sqlite_column("clothing_items", "body_compatibility_json", "TEXT")
+    _ensure_sqlite_column("clothing_items", "runtime_notes", "TEXT")
+    _backfill_clothing_item_defaults()
 
     try:
         yield
@@ -197,6 +205,55 @@ def _latest_body_measurement(db: Session, user_id: int) -> BodyMeasurement | Non
     )
 
 
+def _normalize_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _normalize_body_compatibility(value: list[str] | str | None) -> list[str] | None:
+    if value is None:
+        return None
+
+    raw_values = value if isinstance(value, list) else value.split(",")
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for entry in raw_values:
+        normalized = str(entry).strip().lower()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        cleaned.append(normalized)
+
+    return cleaned or None
+
+
+def _build_clothing_item_kwargs(
+    payload: ClothingItemCreate,
+    image_path_override: str | None = None,
+) -> dict:
+    body_compatibility = _normalize_body_compatibility(payload.body_compatibility)
+    render_mode = (_normalize_optional_text(payload.render_mode) or "texture").lower()
+    image_path = _normalize_optional_text(image_path_override or payload.image_path)
+    preview_image_path = _normalize_optional_text(payload.preview_image_path) or image_path
+
+    return {
+        "user_id": payload.user_id,
+        "display_name": _normalize_optional_text(payload.display_name),
+        "category": payload.category.strip(),
+        "slot": (_normalize_optional_text(payload.slot) or "").lower() or None,
+        "size_label": payload.size_label.strip().upper(),
+        "color": payload.color.strip().lower(),
+        "image_path": image_path,
+        "preview_image_path": preview_image_path,
+        "model_path": _normalize_optional_text(payload.model_path),
+        "render_mode": render_mode,
+        "body_compatibility_json": json.dumps(body_compatibility, ensure_ascii=False) if body_compatibility else None,
+        "runtime_notes": _normalize_optional_text(payload.runtime_notes),
+    }
+
+
 def persist_task_output(user_id: int, clothing_item_id: int, output_url: str) -> None:
     db = SessionLocal()
     try:
@@ -209,6 +266,8 @@ def persist_task_output(user_id: int, clothing_item_id: int, output_url: str) ->
             raise ValueError("Clothing item not found")
         if not cloth.image_path or cloth.image_path.startswith("/textures/"):
             cloth.image_path = output_url
+        if not cloth.preview_image_path or cloth.preview_image_path.startswith("/textures/"):
+            cloth.preview_image_path = output_url
         db.commit()
     finally:
         db.close()
@@ -241,6 +300,29 @@ def _ensure_sqlite_column(table_name: str, column_name: str, column_sql: str) ->
         }
         if column_name not in existing_columns:
             connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}"))
+
+
+def _backfill_clothing_item_defaults() -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                UPDATE clothing_items
+                SET render_mode = 'texture'
+                WHERE render_mode IS NULL OR TRIM(render_mode) = ''
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE clothing_items
+                SET preview_image_path = image_path
+                WHERE (preview_image_path IS NULL OR TRIM(preview_image_path) = '')
+                  AND image_path IS NOT NULL
+                """
+            )
+        )
 
 
 task_manager = TaskManager(
@@ -374,7 +456,7 @@ def create_clothing_item(payload: ClothingItemCreate, db: Session = Depends(get_
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    item = ClothingItem(**payload.model_dump())
+    item = ClothingItem(**_build_clothing_item_kwargs(payload))
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -384,9 +466,16 @@ def create_clothing_item(payload: ClothingItemCreate, db: Session = Depends(get_
 @app.post("/clothing-items/upload", response_model=ClothingItemResponse)
 async def create_clothing_item_with_image(
     user_id: int = Form(...),
+    display_name: str | None = Form(default=None),
     category: str = Form(...),
+    slot: str | None = Form(default=None),
     size_label: str = Form(...),
     color: str = Form(...),
+    preview_image_path: str | None = Form(default=None),
+    model_path: str | None = Form(default=None),
+    render_mode: str = Form(default="texture"),
+    body_compatibility: str | None = Form(default=None),
+    runtime_notes: str | None = Form(default=None),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ) -> ClothingItem:
@@ -397,13 +486,21 @@ async def create_clothing_item_with_image(
     file_bytes = await file.read()
     image_path = _save_uploaded_clothing_image(file_bytes)
 
-    item = ClothingItem(
+    payload = ClothingItemCreate(
         user_id=user_id,
+        display_name=display_name,
         category=category,
+        slot=slot,
         size_label=size_label,
         color=color,
         image_path=image_path,
+        preview_image_path=preview_image_path,
+        model_path=model_path,
+        render_mode=render_mode,
+        body_compatibility=_normalize_body_compatibility(body_compatibility),
+        runtime_notes=runtime_notes,
     )
+    item = ClothingItem(**_build_clothing_item_kwargs(payload, image_path_override=image_path))
     db.add(item)
     db.commit()
     db.refresh(item)

@@ -14,6 +14,7 @@ class UserProfile(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
+    gender = Column(String(10), nullable=False, default="male")
     height_cm = Column(Float, nullable=False)
     chest_cm = Column(Float, nullable=False)
     waist_cm = Column(Float, nullable=False)

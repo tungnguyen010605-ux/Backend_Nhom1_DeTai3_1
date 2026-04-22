@@ -102,6 +102,7 @@ async def lifespan(app: FastAPI):
 
     Base.metadata.create_all(bind=engine)
     _ensure_sqlite_column("body_measurements", "keypoints_json", "TEXT")
+    _ensure_sqlite_column("user_profiles", "gender", "VARCHAR(10) DEFAULT 'male'")
     _ensure_sqlite_column("clothing_items", "display_name", "VARCHAR(120)")
     _ensure_sqlite_column("clothing_items", "slot", "VARCHAR(20)")
     _ensure_sqlite_column("clothing_items", "preview_image_path", "VARCHAR(300)")
@@ -109,6 +110,7 @@ async def lifespan(app: FastAPI):
     _ensure_sqlite_column("clothing_items", "render_mode", "VARCHAR(20) DEFAULT 'texture'")
     _ensure_sqlite_column("clothing_items", "body_compatibility_json", "TEXT")
     _ensure_sqlite_column("clothing_items", "runtime_notes", "TEXT")
+    _backfill_user_profile_defaults()
     _backfill_clothing_item_defaults()
 
     try:
@@ -311,6 +313,19 @@ def _backfill_clothing_item_defaults() -> None:
                 UPDATE clothing_items
                 SET render_mode = 'texture'
                 WHERE render_mode IS NULL OR TRIM(render_mode) = ''
+                """
+            )
+        )
+
+
+def _backfill_user_profile_defaults() -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                UPDATE user_profiles
+                SET gender = 'male'
+                WHERE gender IS NULL OR TRIM(gender) = ''
                 """
             )
         )
@@ -591,6 +606,14 @@ async def generate_texture(payload: TaskCreateRequest, db: Session = Depends(get
     cloth = db.query(ClothingItem).filter(ClothingItem.id == payload.clothing_item_id).first()
     if not cloth:
         raise HTTPException(status_code=404, detail="Clothing item not found")
+    if cloth.user_id != payload.user_id:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Clothing item #{cloth.id} belongs to user_id={cloth.user_id}, "
+                f"but request used user_id={payload.user_id}."
+            ),
+        )
 
     return task_manager.create_task(payload.user_id, payload.clothing_item_id)
 

@@ -4,9 +4,13 @@ const statusLog = document.getElementById("status-log");
 const resultLink = document.getElementById("result-link");
 const resultImage = document.getElementById("result-image");
 const existingUserSelect = document.getElementById("existing-user-select");
-const existingClothingSelect = document.getElementById("existing-clothing-select");
+const existingClothingSelect = document.getElementById(
+  "existing-clothing-select",
+);
 const existingUserGroup = document.getElementById("existing-user-group");
-const existingClothingGroup = document.getElementById("existing-clothing-group");
+const existingClothingGroup = document.getElementById(
+  "existing-clothing-group",
+);
 const refreshUsersBtn = document.getElementById("refresh-users");
 const refreshClothingBtn = document.getElementById("refresh-clothing");
 const autoPickClothingBtn = document.getElementById("auto-pick-clothing");
@@ -17,6 +21,7 @@ const poseVideo = document.getElementById("pose-video");
 const poseCanvas = document.getElementById("pose-canvas");
 const poseStatus = document.getElementById("pose-status");
 const poseSummary = document.getElementById("pose-summary");
+const genderSelect = document.getElementById("gender-select");
 
 const categoryGroupSelect = document.getElementById("category-group-select");
 const categoryTypeSelect = document.getElementById("category-type-select");
@@ -26,7 +31,9 @@ const displayNameInput = document.getElementById("display-name-input");
 const runtimeSlotSelect = document.getElementById("runtime-slot-select");
 const renderModeSelect = document.getElementById("render-mode-select");
 const modelPathInput = document.getElementById("model-path-input");
-const bodyCompatibilityInput = document.getElementById("body-compatibility-input");
+const bodyCompatibilityInput = document.getElementById(
+  "body-compatibility-input",
+);
 const runtimeNotesInput = document.getElementById("runtime-notes-input");
 const imagePathPreviewInput = document.getElementById("image-path-preview");
 const clothingFileInput = document.getElementById("clothing-file");
@@ -90,6 +97,7 @@ let latestPoseEstimate = null;
 
 const measurementInputs = {
   name: form.querySelector('input[name="name"]'),
+  gender: genderSelect,
   height_cm: form.querySelector('input[name="height_cm"]'),
   chest_cm: form.querySelector('input[name="chest_cm"]'),
   waist_cm: form.querySelector('input[name="waist_cm"]'),
@@ -162,7 +170,9 @@ function composeCategory(group, type) {
 }
 
 function splitCategory(rawCategory) {
-  const raw = String(rawCategory || "").trim().toLowerCase();
+  const raw = String(rawCategory || "")
+    .trim()
+    .toLowerCase();
   if (!raw) {
     return { group: "shirt", type: "other" };
   }
@@ -186,7 +196,9 @@ function splitCategory(rawCategory) {
 
 function syncCategoryTypeOptions() {
   const group = categoryGroupSelect.value || "shirt";
-  const types = CATEGORY_TREE[group] ? CATEGORY_TREE[group].types : CATEGORY_TREE.shirt.types;
+  const types = CATEGORY_TREE[group]
+    ? CATEGORY_TREE[group].types
+    : CATEGORY_TREE.shirt.types;
   const current = categoryTypeSelect.value;
 
   fillSelect(
@@ -205,14 +217,21 @@ function syncCategoryTypeOptions() {
 function initializeDropdowns() {
   fillSelect(
     categoryGroupSelect,
-    Object.entries(CATEGORY_TREE).map(([value, config]) => ({ value, label: config.label })),
+    Object.entries(CATEGORY_TREE).map(([value, config]) => ({
+      value,
+      label: config.label,
+    })),
     "Chọn nhóm đồ",
   );
 
   categoryGroupSelect.value = "shirt";
   syncCategoryTypeOptions();
 
-  fillSelect(sizeSelect, SIZE_OPTIONS.map((s) => ({ value: s, label: s })), "Chọn size");
+  fillSelect(
+    sizeSelect,
+    SIZE_OPTIONS.map((s) => ({ value: s, label: s })),
+    "Chọn size",
+  );
   fillSelect(colorSelect, COLOR_OPTIONS, "Chọn màu");
   fillSelect(runtimeSlotSelect, RUNTIME_SLOT_OPTIONS, "Chọn slot");
   fillSelect(renderModeSelect, RENDER_MODE_OPTIONS, "Chọn mode render");
@@ -229,11 +248,26 @@ function fillUserMeasurementFields(user) {
     return;
   }
   measurementInputs.name.value = user.name || "";
+  if (measurementInputs.gender) {
+    measurementInputs.gender.value = user.gender || "male";
+  }
   measurementInputs.height_cm.value = user.height_cm ?? "";
   measurementInputs.chest_cm.value = user.chest_cm ?? "";
   measurementInputs.waist_cm.value = user.waist_cm ?? "";
   measurementInputs.hip_cm.value = user.hip_cm ?? "";
   measurementInputs.inseam_cm.value = user.inseam_cm ?? "";
+}
+
+function setUserInputState(isExistingMode) {
+  measurementInputs.name.disabled = isExistingMode;
+  if (measurementInputs.gender) {
+    measurementInputs.gender.disabled = isExistingMode;
+  }
+  measurementInputs.height_cm.disabled = isExistingMode;
+  measurementInputs.chest_cm.disabled = isExistingMode;
+  measurementInputs.waist_cm.disabled = isExistingMode;
+  measurementInputs.hip_cm.disabled = isExistingMode;
+  measurementInputs.inseam_cm.disabled = isExistingMode;
 }
 
 function setClothingInputState(isExistingMode) {
@@ -267,10 +301,16 @@ function applyClothingToFields(item) {
   }
 
   const parsed = splitCategory(item.category);
-  categoryGroupSelect.value = CATEGORY_TREE[parsed.group] ? parsed.group : "shirt";
+  categoryGroupSelect.value = CATEGORY_TREE[parsed.group]
+    ? parsed.group
+    : "shirt";
   syncCategoryTypeOptions();
 
-  if (Array.from(categoryTypeSelect.options).some((opt) => opt.value === parsed.type)) {
+  if (
+    Array.from(categoryTypeSelect.options).some(
+      (opt) => opt.value === parsed.type,
+    )
+  ) {
     categoryTypeSelect.value = parsed.type;
   } else {
     categoryTypeSelect.value = "other";
@@ -279,7 +319,11 @@ function applyClothingToFields(item) {
   displayNameInput.value = item.display_name || "";
 
   const runtimeSlot = String(item.slot || "").toLowerCase();
-  if (Array.from(runtimeSlotSelect.options).some((opt) => opt.value === runtimeSlot)) {
+  if (
+    Array.from(runtimeSlotSelect.options).some(
+      (opt) => opt.value === runtimeSlot,
+    )
+  ) {
     runtimeSlotSelect.value = runtimeSlot;
   } else {
     runtimeSlotSelect.value = parsed.group === "pants" ? "bottom" : "top";
@@ -295,22 +339,35 @@ function applyClothingToFields(item) {
   }
 
   const renderMode = String(item.render_mode || "texture").toLowerCase();
-  renderModeSelect.value = RENDER_MODE_OPTIONS.some((entry) => entry.value === renderMode)
+  renderModeSelect.value = RENDER_MODE_OPTIONS.some(
+    (entry) => entry.value === renderMode,
+  )
     ? renderMode
     : "texture";
   modelPathInput.value = item.model_path || "";
-  bodyCompatibilityInput.value = formatBodyCompatibility(item.body_compatibility);
+  bodyCompatibilityInput.value = formatBodyCompatibility(
+    item.body_compatibility,
+  );
   runtimeNotesInput.value = item.runtime_notes || "";
-  imagePathPreviewInput.value = item.preview_image_path || item.image_path || "";
+  imagePathPreviewInput.value =
+    item.preview_image_path || item.image_path || "";
 }
 
 function syncModeVisibility() {
   const userMode = selectedMode("user_mode");
   const clothingMode = selectedMode("clothing_mode");
+  const isExistingUser = userMode === "existing";
   const isExistingClothing = clothingMode === "existing";
   existingUserGroup.style.display = userMode === "existing" ? "grid" : "none";
   existingClothingGroup.style.display = isExistingClothing ? "grid" : "none";
+  setUserInputState(isExistingUser);
   setClothingInputState(isExistingClothing);
+
+  if (isExistingUser) {
+    const selectedId = Number(existingUserSelect.value);
+    const user = usersCache.find((entry) => entry.id === selectedId);
+    fillUserMeasurementFields(user);
+  }
 
   if (isExistingClothing) {
     const selectedId = Number(existingClothingSelect.value);
@@ -332,7 +389,8 @@ async function apiJson(url, options) {
   const response = await fetch(url, options);
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const detail = data && data.detail ? JSON.stringify(data.detail) : response.statusText;
+    const detail =
+      data && data.detail ? JSON.stringify(data.detail) : response.statusText;
     throw new Error(`${response.status} ${detail}`);
   }
   return data;
@@ -358,7 +416,10 @@ async function loadUsers() {
   usersCache = await apiJson("/users?limit=500", { method: "GET" });
   fillSelect(
     existingUserSelect,
-    usersCache.map((u) => ({ value: u.id, label: `#${u.id} - ${u.name}` })),
+    usersCache.map((u) => ({
+      value: u.id,
+      label: `#${u.id} - ${u.name} (${u.gender === "female" ? "Nữ" : "Nam"})`,
+    })),
     "Không có user. Chuyển sang tạo user mới.",
   );
 
@@ -368,15 +429,23 @@ async function loadUsers() {
   }
 }
 
-async function loadClothing() {
-  clothingCache = await apiJson("/clothing-items?limit=500", { method: "GET" });
+async function loadClothing(userId = null) {
+  const suffix =
+    Number.isFinite(Number(userId)) && Number(userId) > 0
+      ? `&user_id=${Number(userId)}`
+      : "";
+  clothingCache = await apiJson(`/clothing-items?limit=500${suffix}`, {
+    method: "GET",
+  });
   fillSelect(
     existingClothingSelect,
     clothingCache.map((c) => ({
       value: c.id,
       label: `#${c.id} - ${c.display_name || c.category} - ${String(c.render_mode || "texture").toUpperCase()} - ${String(c.size_label).toUpperCase()} - ${c.color}`,
     })),
-    "Không có clothing item. Chuyển sang tạo item mới.",
+    Number.isFinite(Number(userId)) && Number(userId) > 0
+      ? "User này chưa có clothing item. Chuyển sang tạo item mới."
+      : "Không có clothing item. Chuyển sang tạo item mới.",
   );
 
   if (clothingCache.length > 0) {
@@ -412,12 +481,18 @@ async function startCamera() {
   }
 
   activeCameraStream = await navigator.mediaDevices.getUserMedia({
-    video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" },
+    video: {
+      width: { ideal: 640 },
+      height: { ideal: 480 },
+      facingMode: "user",
+    },
     audio: false,
   });
   poseVideo.srcObject = activeCameraStream;
   await poseVideo.play();
-  setPoseStatus("Camera đang bật. Đứng thẳng trong khung hình rồi bấm chụp pose.");
+  setPoseStatus(
+    "Camera đang bật. Đứng thẳng trong khung hình rồi bấm chụp pose.",
+  );
 }
 
 function stopCamera() {
@@ -454,13 +529,17 @@ async function capturePoseEstimate() {
   ctx.drawImage(poseVideo, 0, 0, width, height);
 
   const blob = await new Promise((resolve, reject) => {
-    poseCanvas.toBlob((value) => {
-      if (value) {
-        resolve(value);
-      } else {
-        reject(new Error("Không thể tạo ảnh từ webcam"));
-      }
-    }, "image/jpeg", 0.92);
+    poseCanvas.toBlob(
+      (value) => {
+        if (value) {
+          resolve(value);
+        } else {
+          reject(new Error("Không thể tạo ảnh từ webcam"));
+        }
+      },
+      "image/jpeg",
+      0.92,
+    );
   });
 
   const payload = new FormData();
@@ -487,11 +566,19 @@ async function persistPoseMeasurementIfAvailable(userId, formData) {
 
   const payload = {
     user_id: userId,
-    height_cm: requireNumber(formData, "height_cm", "Please enter valid height"),
+    height_cm: requireNumber(
+      formData,
+      "height_cm",
+      "Please enter valid height",
+    ),
     chest_cm: requireNumber(formData, "chest_cm", "Please enter valid chest"),
     waist_cm: requireNumber(formData, "waist_cm", "Please enter valid waist"),
     hip_cm: requireNumber(formData, "hip_cm", "Please enter valid hip"),
-    inseam_cm: requireNumber(formData, "inseam_cm", "Please enter valid inseam"),
+    inseam_cm: requireNumber(
+      formData,
+      "inseam_cm",
+      "Please enter valid inseam",
+    ),
     source: "mediapipe_ui",
     keypoints: latestPoseEstimate.keypoints,
   };
@@ -520,13 +607,27 @@ async function resolveUserId(formData) {
     throw new Error("Please enter user name");
   }
 
+  const gender = String(formData.get("gender") || "male").toLowerCase();
+  if (!["male", "female"].includes(gender)) {
+    throw new Error("Please select a valid gender");
+  }
+
   const userPayload = {
     name,
-    height_cm: requireNumber(formData, "height_cm", "Please enter valid height"),
+    gender,
+    height_cm: requireNumber(
+      formData,
+      "height_cm",
+      "Please enter valid height",
+    ),
     chest_cm: requireNumber(formData, "chest_cm", "Please enter valid chest"),
     waist_cm: requireNumber(formData, "waist_cm", "Please enter valid waist"),
     hip_cm: requireNumber(formData, "hip_cm", "Please enter valid hip"),
-    inseam_cm: requireNumber(formData, "inseam_cm", "Please enter valid inseam"),
+    inseam_cm: requireNumber(
+      formData,
+      "inseam_cm",
+      "Please enter valid inseam",
+    ),
   };
 
   log("1) Creating user profile...");
@@ -539,6 +640,7 @@ async function resolveUserId(formData) {
   log(`User created: id=${user.id}`);
   await loadUsers();
   existingUserSelect.value = String(user.id);
+  fillUserMeasurementFields(user);
   return user.id;
 }
 
@@ -551,7 +653,9 @@ async function resolveClothingId(formData, userId) {
 
     const item = clothingCache.find((c) => c.id === clothingId);
     if (!item) {
-      throw new Error("Selected clothing item was not found in the current catalog");
+      throw new Error(
+        "Selected clothing item was not found in the current catalog",
+      );
     }
 
     applyClothingToFields(item);
@@ -561,7 +665,9 @@ async function resolveClothingId(formData, userId) {
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
-    throw new Error("Please choose a clothing image file for new clothing item");
+    throw new Error(
+      "Please choose a clothing image file for new clothing item",
+    );
   }
 
   const width = Number(formData.get("width"));
@@ -585,7 +691,10 @@ async function resolveClothingId(formData, userId) {
   const clothPayload = {
     user_id: userId,
     display_name: String(formData.get("display_name") || "").trim() || null,
-    category: composeCategory(categoryGroupSelect.value, categoryTypeSelect.value),
+    category: composeCategory(
+      categoryGroupSelect.value,
+      categoryTypeSelect.value,
+    ),
     slot: runtimeSlotSelect.value || null,
     size_label: sizeSelect.value,
     color: colorSelect.value,
@@ -593,7 +702,9 @@ async function resolveClothingId(formData, userId) {
     preview_image_path: preprocess.file_url,
     model_path: String(formData.get("model_path") || "").trim() || null,
     render_mode: renderModeSelect.value || "texture",
-    body_compatibility: parseBodyCompatibilityCsv(formData.get("body_compatibility")),
+    body_compatibility: parseBodyCompatibilityCsv(
+      formData.get("body_compatibility"),
+    ),
     runtime_notes: String(formData.get("runtime_notes") || "").trim() || null,
   };
 
@@ -635,16 +746,21 @@ async function autoPickClothing() {
 
   let targetSize = "M";
   try {
-    const measurement = await apiJson(`/body-measurements/latest/${userId}`, { method: "GET" });
+    const measurement = await apiJson(`/body-measurements/latest/${userId}`, {
+      method: "GET",
+    });
     targetSize = estimateSizeFromMeasurement(measurement);
     log(`Auto-pick target size from latest body data: ${targetSize}`);
   } catch (_error) {
-    log("Auto-pick uses default target size M (no latest body measurement found).");
+    log(
+      "Auto-pick uses default target size M (no latest body measurement found).",
+    );
   }
 
   const withRank = clothingCache
     .map((item) => {
-      const rank = SIZE_RANK[String(item.size_label || "").toUpperCase()] || SIZE_RANK.M;
+      const rank =
+        SIZE_RANK[String(item.size_label || "").toUpperCase()] || SIZE_RANK.M;
       const targetRank = SIZE_RANK[targetSize] || SIZE_RANK.M;
       return { item, distance: Math.abs(rank - targetRank) };
     })
@@ -653,7 +769,9 @@ async function autoPickClothing() {
   const picked = withRank[0].item;
   existingClothingSelect.value = String(picked.id);
   applyClothingToFields(picked);
-  log(`Auto-picked clothing item id=${picked.id}, size=${String(picked.size_label).toUpperCase()}`);
+  log(
+    `Auto-picked clothing item id=${picked.id}, size=${String(picked.size_label).toUpperCase()}`,
+  );
 }
 
 async function runFlow(event) {
@@ -699,7 +817,10 @@ form.addEventListener("change", (event) => {
     return;
   }
 
-  if (target.matches('input[name="user_mode"]') || target.matches('input[name="clothing_mode"]')) {
+  if (
+    target.matches('input[name="user_mode"]') ||
+    target.matches('input[name="clothing_mode"]')
+  ) {
     syncModeVisibility();
   }
 });
@@ -719,7 +840,11 @@ existingUserSelect.addEventListener("change", async () => {
     const selectedId = Number(existingUserSelect.value);
     const user = usersCache.find((entry) => entry.id === selectedId);
     fillUserMeasurementFields(user);
-    log(`Selected existing user #${existingUserSelect.value}. Clothing catalog remains global across all users.`);
+    await loadClothing(selectedId);
+    const genderText = user && user.gender === "female" ? "Nữ" : "Nam";
+    log(
+      `Selected existing user #${existingUserSelect.value} (${genderText}). Clothing catalog filtered by this user.`,
+    );
   } catch (error) {
     log(`Error: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -729,7 +854,9 @@ startCameraBtn.addEventListener("click", async () => {
   try {
     await startCamera();
   } catch (error) {
-    setPoseStatus(`Lỗi camera: ${error instanceof Error ? error.message : String(error)}`);
+    setPoseStatus(
+      `Lỗi camera: ${error instanceof Error ? error.message : String(error)}`,
+    );
     log(`Error: ${error instanceof Error ? error.message : String(error)}`);
   }
 });
@@ -742,7 +869,9 @@ capturePoseBtn.addEventListener("click", async () => {
   try {
     await capturePoseEstimate();
   } catch (error) {
-    setPoseStatus(`Lỗi pose: ${error instanceof Error ? error.message : String(error)}`);
+    setPoseStatus(
+      `Lỗi pose: ${error instanceof Error ? error.message : String(error)}`,
+    );
     log(`Error: ${error instanceof Error ? error.message : String(error)}`);
   }
 });
@@ -750,7 +879,8 @@ capturePoseBtn.addEventListener("click", async () => {
 refreshUsersBtn.addEventListener("click", async () => {
   try {
     await loadUsers();
-    await loadClothing();
+    const selectedUserId = Number(existingUserSelect.value);
+    await loadClothing(selectedUserId);
   } catch (error) {
     log(`Error: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -758,7 +888,8 @@ refreshUsersBtn.addEventListener("click", async () => {
 
 refreshClothingBtn.addEventListener("click", async () => {
   try {
-    await loadClothing();
+    const selectedUserId = Number(existingUserSelect.value);
+    await loadClothing(selectedUserId);
   } catch (error) {
     log(`Error: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -775,11 +906,15 @@ autoPickClothingBtn.addEventListener("click", async () => {
 async function initialize() {
   initializeDropdowns();
   syncModeVisibility();
+  if (genderSelect && !genderSelect.value) {
+    genderSelect.value = "male";
+  }
   statusLog.textContent = "Ready.";
 
   try {
     await loadUsers();
-    await loadClothing();
+    const selectedUserId = Number(existingUserSelect.value);
+    await loadClothing(selectedUserId);
     if (usersCache.length > 0) {
       fillUserMeasurementFields(usersCache[0]);
     }

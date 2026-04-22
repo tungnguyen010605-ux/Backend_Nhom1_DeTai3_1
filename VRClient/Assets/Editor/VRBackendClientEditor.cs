@@ -29,12 +29,7 @@ public class VRBackendClientEditor : Editor
 
         if (GUILayout.Button("Run Test Request Fitting"))
         {
-            client.RunTestFittingWorkflow();
-        }
-
-        if (GUILayout.Button("Run Random User & Cloth"))
-        {
-            client.TestRandomFromDB();
+            client.RunFittingWorkflow();
         }
 
         GUI.enabled = true;

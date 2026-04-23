@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 from uuid import uuid4
 
-from sqlalchemy import text
+from sqlalchemy import or_, text
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -22,12 +22,21 @@ try:
         BodyData,
         BodyMeasurementCreate,
         BodyMeasurementResponse,
+        BulkDeleteClothingResult,
+        BulkDeleteRequest,
+        BulkDeleteUsersPreviewResponse,
+        BulkDeleteUsersResult,
         ClothingItemCreate,
+        ClothingItemUpdate,
+        DeleteClothingItemResult,
+        DeleteUserPreviewResponse,
+        DeleteUserResult,
         ClothingItemResponse,
         PoseEstimateResponse,
         TaskCreateRequest,
         TaskStatus,
         UserCreate,
+        UserUpdate,
         UserResponse,
     )
     from .services.mock_vr import build_mock_body_data
@@ -45,12 +54,21 @@ except ImportError:
         BodyData,
         BodyMeasurementCreate,
         BodyMeasurementResponse,
+        BulkDeleteClothingResult,
+        BulkDeleteRequest,
+        BulkDeleteUsersPreviewResponse,
+        BulkDeleteUsersResult,
         ClothingItemCreate,
+        ClothingItemUpdate,
+        DeleteClothingItemResult,
+        DeleteUserPreviewResponse,
+        DeleteUserResult,
         ClothingItemResponse,
         PoseEstimateResponse,
         TaskCreateRequest,
         TaskStatus,
         UserCreate,
+        UserUpdate,
         UserResponse,
     )
     from Bend.app.services.mock_vr import build_mock_body_data
@@ -199,12 +217,95 @@ def _asset_url_to_path(asset_url: str | None) -> Path | None:
     return None
 
 
+def _delete_asset_if_unreferenced(db: Session, asset_url: str | None) -> None:
+    path = _asset_url_to_path(asset_url)
+    if path is None or not path.exists():
+        return
+
+    usage_count = (
+        db.query(ClothingItem)
+        .filter(or_(ClothingItem.image_path == asset_url, ClothingItem.preview_image_path == asset_url))
+        .count()
+    )
+    if usage_count == 0:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
+def _build_delete_user_preview(db: Session, user: UserProfile) -> DeleteUserPreviewResponse:
+    clothing_count = db.query(ClothingItem).filter(ClothingItem.user_id == user.id).count()
+    measurement_count = db.query(BodyMeasurement).filter(BodyMeasurement.user_id == user.id).count()
+    warning = (
+        f"Ban sap xoa user #{user.id} ({user.name}). "
+        f"Hanh dong nay se xoa {clothing_count} clothing item va {measurement_count} body measurement lien quan."
+    )
+    return DeleteUserPreviewResponse(
+        user_id=user.id,
+        user_name=user.name,
+        clothing_item_count=clothing_count,
+        body_measurement_count=measurement_count,
+        warning=warning,
+    )
+
+
 def _latest_body_measurement(db: Session, user_id: int) -> BodyMeasurement | None:
     return (
         db.query(BodyMeasurement)
         .filter(BodyMeasurement.user_id == user_id)
         .order_by(BodyMeasurement.created_at.desc(), BodyMeasurement.id.desc())
         .first()
+    )
+
+
+def _normalize_unique_ids(ids: list[int]) -> list[int]:
+    deduped: list[int] = []
+    seen: set[int] = set()
+    for raw in ids:
+        value = int(raw)
+        if value <= 0:
+            raise HTTPException(status_code=400, detail="All ids must be positive integers")
+        if value in seen:
+            continue
+        seen.add(value)
+        deduped.append(value)
+    return deduped
+
+
+def _build_bulk_delete_users_preview(db: Session, ids: list[int]) -> BulkDeleteUsersPreviewResponse:
+    normalized_ids = _normalize_unique_ids(ids)
+    found_ids = {
+        user_id
+        for (user_id,) in db.query(UserProfile.id).filter(UserProfile.id.in_(normalized_ids)).all()
+    }
+    ordered_found_ids = [user_id for user_id in normalized_ids if user_id in found_ids]
+    not_found_ids = [user_id for user_id in normalized_ids if user_id not in found_ids]
+
+    total_clothing = 0
+    total_measurements = 0
+    if ordered_found_ids:
+        total_clothing = (
+            db.query(ClothingItem).filter(ClothingItem.user_id.in_(ordered_found_ids)).count()
+        )
+        total_measurements = (
+            db.query(BodyMeasurement).filter(BodyMeasurement.user_id.in_(ordered_found_ids)).count()
+        )
+
+    warning = (
+        f"Ban sap xoa {len(ordered_found_ids)} user. "
+        f"Hanh dong nay se xoa {total_clothing} clothing item va {total_measurements} body measurement lien quan."
+    )
+    if not_found_ids:
+        warning = f"{warning} Khong tim thay user_id: {', '.join(str(i) for i in not_found_ids)}."
+
+    return BulkDeleteUsersPreviewResponse(
+        requested_ids=normalized_ids,
+        found_ids=ordered_found_ids,
+        not_found_ids=not_found_ids,
+        total_clothing_item_count=total_clothing,
+        total_body_measurement_count=total_measurements,
+        warning=warning,
     )
 
 
@@ -399,6 +500,165 @@ def get_user(user_id: int, db: Session = Depends(get_db)) -> UserProfile:
     return user
 
 
+@app.patch("/users/{user_id}", response_model=UserResponse)
+def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)) -> UserProfile:
+    user = db.query(UserProfile).filter(UserProfile.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    updated_fields = payload.model_dump(exclude_unset=True)
+    if "name" in updated_fields:
+        normalized_name = updated_fields["name"].strip()
+        if not normalized_name:
+            raise HTTPException(status_code=400, detail="User name cannot be empty")
+        user.name = normalized_name
+    if "gender" in updated_fields:
+        user.gender = updated_fields["gender"]
+    if "height_cm" in updated_fields:
+        user.height_cm = updated_fields["height_cm"]
+    if "chest_cm" in updated_fields:
+        user.chest_cm = updated_fields["chest_cm"]
+    if "waist_cm" in updated_fields:
+        user.waist_cm = updated_fields["waist_cm"]
+    if "hip_cm" in updated_fields:
+        user.hip_cm = updated_fields["hip_cm"]
+    if "inseam_cm" in updated_fields:
+        user.inseam_cm = updated_fields["inseam_cm"]
+
+    measurement_fields = {"height_cm", "chest_cm", "waist_cm", "hip_cm", "inseam_cm"}
+    if measurement_fields.intersection(updated_fields.keys()):
+        db.add(
+            BodyMeasurement(
+                user_id=user.id,
+                height_cm=user.height_cm,
+                chest_cm=user.chest_cm,
+                waist_cm=user.waist_cm,
+                hip_cm=user.hip_cm,
+                inseam_cm=user.inseam_cm,
+                source="user_update_api",
+                keypoints_json=None,
+            )
+        )
+
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.post("/users/bulk-delete-preview", response_model=BulkDeleteUsersPreviewResponse)
+def bulk_delete_users_preview(payload: BulkDeleteRequest, db: Session = Depends(get_db)) -> BulkDeleteUsersPreviewResponse:
+    return _build_bulk_delete_users_preview(db, payload.ids)
+
+
+@app.post("/users/bulk-delete", response_model=BulkDeleteUsersResult)
+def bulk_delete_users(payload: BulkDeleteRequest, db: Session = Depends(get_db)) -> BulkDeleteUsersResult:
+    preview = _build_bulk_delete_users_preview(db, payload.ids)
+    if not payload.confirm:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Set confirm=true to permanently delete these users and related records.",
+                "preview": preview.model_dump(),
+            },
+        )
+
+    if not preview.found_ids:
+        return BulkDeleteUsersResult(
+            deleted_user_ids=[],
+            deleted_clothing_item_count=0,
+            deleted_body_measurement_count=0,
+            not_found_ids=preview.not_found_ids,
+            message="No matching users found.",
+        )
+
+    clothing_assets: list[str | None] = []
+    for item in db.query(ClothingItem).filter(ClothingItem.user_id.in_(preview.found_ids)).all():
+        clothing_assets.extend([item.image_path, item.preview_image_path])
+
+    deleted_measurements = (
+        db.query(BodyMeasurement)
+        .filter(BodyMeasurement.user_id.in_(preview.found_ids))
+        .delete(synchronize_session=False)
+    )
+    deleted_clothing_items = (
+        db.query(ClothingItem)
+        .filter(ClothingItem.user_id.in_(preview.found_ids))
+        .delete(synchronize_session=False)
+    )
+    (
+        db.query(UserProfile)
+        .filter(UserProfile.id.in_(preview.found_ids))
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+
+    for asset_url in set(clothing_assets):
+        _delete_asset_if_unreferenced(db, asset_url)
+    for user_id in preview.found_ids:
+        user_ref_image = PERSON_IMAGE_DIR / f"user_{user_id}.png"
+        if user_ref_image.exists():
+            try:
+                user_ref_image.unlink()
+            except OSError:
+                pass
+
+    return BulkDeleteUsersResult(
+        deleted_user_ids=preview.found_ids,
+        deleted_clothing_item_count=deleted_clothing_items,
+        deleted_body_measurement_count=deleted_measurements,
+        not_found_ids=preview.not_found_ids,
+        message="Users and related records deleted successfully.",
+    )
+
+
+@app.get("/users/{user_id}/delete-preview", response_model=DeleteUserPreviewResponse)
+def get_delete_user_preview(user_id: int, db: Session = Depends(get_db)) -> DeleteUserPreviewResponse:
+    user = db.query(UserProfile).filter(UserProfile.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return _build_delete_user_preview(db, user)
+
+
+@app.delete("/users/{user_id}", response_model=DeleteUserResult)
+def delete_user(user_id: int, confirm: bool = False, db: Session = Depends(get_db)) -> DeleteUserResult:
+    user = db.query(UserProfile).filter(UserProfile.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    preview = _build_delete_user_preview(db, user)
+    if not confirm:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Set confirm=true to permanently delete this user and related records.",
+                "preview": preview.model_dump(),
+            },
+        )
+
+    clothing_assets: list[str | None] = []
+    for item in db.query(ClothingItem).filter(ClothingItem.user_id == user.id).all():
+        clothing_assets.extend([item.image_path, item.preview_image_path])
+
+    deleted_measurements = db.query(BodyMeasurement).filter(BodyMeasurement.user_id == user.id).delete()
+    deleted_clothing_items = db.query(ClothingItem).filter(ClothingItem.user_id == user.id).delete()
+    db.delete(user)
+    db.commit()
+
+    for asset_url in set(clothing_assets):
+        _delete_asset_if_unreferenced(db, asset_url)
+    user_ref_image = PERSON_IMAGE_DIR / f"user_{user.id}.png"
+    if user_ref_image.exists():
+        try:
+            user_ref_image.unlink()
+        except OSError:
+            pass
+
+    return DeleteUserResult(
+        deleted_user_id=user.id,
+        deleted_clothing_item_count=deleted_clothing_items,
+        deleted_body_measurement_count=deleted_measurements,
+        message="User and related records deleted successfully.",
+    )
 @app.post("/users/{user_id}/reference-image")
 async def upload_user_reference_image(
     user_id: int,
@@ -532,6 +792,157 @@ def get_clothing_items(user_id: int | None = None, limit: int = 100, db: Session
     return query.order_by(ClothingItem.id.asc()).limit(safe_limit).all()
 
 
+@app.patch("/clothing-items/{clothing_item_id}", response_model=ClothingItemResponse)
+def update_clothing_item(
+    clothing_item_id: int,
+    payload: ClothingItemUpdate,
+    user_id: int | None = None,
+    db: Session = Depends(get_db),
+) -> ClothingItem:
+    item = db.query(ClothingItem).filter(ClothingItem.id == clothing_item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Clothing item not found")
+
+    if user_id is not None and item.user_id != user_id:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Clothing item #{item.id} belongs to user_id={item.user_id}, "
+                f"but request used user_id={user_id}."
+            ),
+        )
+
+    previous_image_path = item.image_path
+    previous_preview_image_path = item.preview_image_path
+    updated_fields = payload.model_dump(exclude_unset=True)
+
+    if "display_name" in updated_fields:
+        item.display_name = _normalize_optional_text(updated_fields["display_name"])
+    if "category" in updated_fields:
+        category = updated_fields["category"].strip()
+        if not category:
+            raise HTTPException(status_code=400, detail="Category cannot be empty")
+        item.category = category
+    if "slot" in updated_fields:
+        slot = _normalize_optional_text(updated_fields["slot"])
+        item.slot = slot.lower() if slot else None
+    if "size_label" in updated_fields:
+        item.size_label = updated_fields["size_label"].strip().upper()
+    if "color" in updated_fields:
+        item.color = updated_fields["color"].strip().lower()
+    if "image_path" in updated_fields:
+        item.image_path = _normalize_optional_text(updated_fields["image_path"])
+    if "preview_image_path" in updated_fields:
+        item.preview_image_path = _normalize_optional_text(updated_fields["preview_image_path"])
+    if "model_path" in updated_fields:
+        item.model_path = _normalize_optional_text(updated_fields["model_path"])
+    if "render_mode" in updated_fields:
+        render_mode = (_normalize_optional_text(updated_fields["render_mode"]) or "texture").lower()
+        item.render_mode = render_mode
+    if "body_compatibility" in updated_fields:
+        normalized = _normalize_body_compatibility(updated_fields["body_compatibility"])
+        item.body_compatibility_json = json.dumps(normalized, ensure_ascii=False) if normalized else None
+    if "runtime_notes" in updated_fields:
+        item.runtime_notes = _normalize_optional_text(updated_fields["runtime_notes"])
+
+    db.commit()
+    db.refresh(item)
+
+    if previous_image_path != item.image_path:
+        _delete_asset_if_unreferenced(db, previous_image_path)
+    if previous_preview_image_path != item.preview_image_path and previous_preview_image_path != previous_image_path:
+        _delete_asset_if_unreferenced(db, previous_preview_image_path)
+
+    return item
+
+
+@app.post("/clothing-items/bulk-delete", response_model=BulkDeleteClothingResult)
+def bulk_delete_clothing_items(
+    payload: BulkDeleteRequest,
+    user_id: int | None = None,
+    db: Session = Depends(get_db),
+) -> BulkDeleteClothingResult:
+    if not payload.confirm:
+        raise HTTPException(
+            status_code=409,
+            detail="Set confirm=true to permanently delete these clothing items.",
+        )
+
+    normalized_ids = _normalize_unique_ids(payload.ids)
+    query = db.query(ClothingItem).filter(ClothingItem.id.in_(normalized_ids))
+    if user_id is not None:
+        query = query.filter(ClothingItem.user_id == user_id)
+
+    matched_items = query.all()
+    matched_ids_set = {item.id for item in matched_items}
+    deleted_ids = [item_id for item_id in normalized_ids if item_id in matched_ids_set]
+    not_found_ids = [item_id for item_id in normalized_ids if item_id not in matched_ids_set]
+
+    if not deleted_ids:
+        return BulkDeleteClothingResult(
+            deleted_clothing_item_ids=[],
+            not_found_ids=not_found_ids,
+            user_id=user_id,
+            message="No matching clothing items found.",
+        )
+
+    clothing_assets: list[str | None] = []
+    for item in matched_items:
+        clothing_assets.extend([item.image_path, item.preview_image_path])
+
+    delete_query = db.query(ClothingItem).filter(ClothingItem.id.in_(deleted_ids))
+    if user_id is not None:
+        delete_query = delete_query.filter(ClothingItem.user_id == user_id)
+    delete_query.delete(synchronize_session=False)
+    db.commit()
+
+    for asset_url in set(clothing_assets):
+        _delete_asset_if_unreferenced(db, asset_url)
+
+    return BulkDeleteClothingResult(
+        deleted_clothing_item_ids=deleted_ids,
+        not_found_ids=not_found_ids,
+        user_id=user_id,
+        message="Clothing items deleted successfully.",
+    )
+
+
+@app.delete("/clothing-items/{clothing_item_id}", response_model=DeleteClothingItemResult)
+def delete_clothing_item(
+    clothing_item_id: int,
+    user_id: int | None = None,
+    db: Session = Depends(get_db),
+) -> DeleteClothingItemResult:
+    item = db.query(ClothingItem).filter(ClothingItem.id == clothing_item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Clothing item not found")
+
+    if user_id is not None and item.user_id != user_id:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Clothing item #{item.id} belongs to user_id={item.user_id}, "
+                f"but request used user_id={user_id}."
+            ),
+        )
+
+    image_path = item.image_path
+    preview_image_path = item.preview_image_path
+    owner_id = item.user_id
+    item_id = item.id
+
+    db.delete(item)
+    db.commit()
+
+    _delete_asset_if_unreferenced(db, image_path)
+    if preview_image_path != image_path:
+        _delete_asset_if_unreferenced(db, preview_image_path)
+
+    return DeleteClothingItemResult(
+        deleted_clothing_item_id=item_id,
+        user_id=owner_id,
+        message="Clothing item deleted successfully.",
+    )
 @app.get("/mock/vr/body/{user_id}", response_model=BodyData)
 def mock_vr_body_data(user_id: int, db: Session = Depends(get_db)) -> BodyData:
     user = db.query(UserProfile).filter(UserProfile.id == user_id).first()

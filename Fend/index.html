@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Thử đồ ảo - CPU Friendly</title>
-  <link rel="stylesheet" href="/ui/static/styles.css?v=3" />
+  <link rel="stylesheet" href="/ui/static/styles.css?v=4" />
 </head>
 <body>
   <main class="container">
@@ -18,6 +18,9 @@
           <label><input type="radio" name="user_mode" value="existing" checked /> Dùng user đã có</label>
           <label><input type="radio" name="user_mode" value="new" /> Tạo user mới</label>
           <button type="button" id="refresh-users">Tải lại danh sách user</button>
+          <button type="button" id="edit-user-btn">Sửa user đang chọn</button>
+          <button type="button" id="delete-user-btn" class="btn-danger">Xóa user đang chọn</button>
+          <button type="button" id="bulk-delete-users-btn" class="btn-danger">Xóa nhiều user</button>
         </div>
         <div class="grid" id="existing-user-group">
           <label class="full">Chọn user đã có
@@ -66,6 +69,9 @@
           <label><input type="radio" name="clothing_mode" value="new" /> Tạo clothing item mới</label>
           <button type="button" id="refresh-clothing">Tải lại danh sách quần áo</button>
           <button type="button" id="auto-pick-clothing">Tự chọn item phù hợp</button>
+          <button type="button" id="edit-clothing-btn">Sửa item đang chọn</button>
+          <button type="button" id="delete-clothing-btn" class="btn-danger">Xóa item đang chọn</button>
+          <button type="button" id="bulk-delete-clothing-btn" class="btn-danger">Xóa nhiều item</button>
         </div>
         <div class="grid" id="existing-clothing-group">
           <label class="full">Chọn clothing item có sẵn của user đang chọn
@@ -138,6 +144,6 @@
     </section>
   </main>
 
-  <script src="/ui/static/app.js?v=3"></script>
+  <script src="/ui/static/app.js?v=4"></script>
 </body>
 </html>

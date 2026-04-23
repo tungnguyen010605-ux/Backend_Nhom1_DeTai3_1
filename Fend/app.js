@@ -14,6 +14,12 @@ const existingClothingGroup = document.getElementById(
 const refreshUsersBtn = document.getElementById("refresh-users");
 const refreshClothingBtn = document.getElementById("refresh-clothing");
 const autoPickClothingBtn = document.getElementById("auto-pick-clothing");
+const editUserBtn = document.getElementById("edit-user-btn");
+const deleteUserBtn = document.getElementById("delete-user-btn");
+const bulkDeleteUsersBtn = document.getElementById("bulk-delete-users-btn");
+const editClothingBtn = document.getElementById("edit-clothing-btn");
+const deleteClothingBtn = document.getElementById("delete-clothing-btn");
+const bulkDeleteClothingBtn = document.getElementById("bulk-delete-clothing-btn");
 const startCameraBtn = document.getElementById("start-camera-btn");
 const stopCameraBtn = document.getElementById("stop-camera-btn");
 const capturePoseBtn = document.getElementById("capture-pose-btn");
@@ -245,6 +251,15 @@ function initializeDropdowns() {
 
 function fillUserMeasurementFields(user) {
   if (!user) {
+    measurementInputs.name.value = "";
+    if (measurementInputs.gender) {
+      measurementInputs.gender.value = "male";
+    }
+    measurementInputs.height_cm.value = "";
+    measurementInputs.chest_cm.value = "";
+    measurementInputs.waist_cm.value = "";
+    measurementInputs.hip_cm.value = "";
+    measurementInputs.inseam_cm.value = "";
     return;
   }
   measurementInputs.name.value = user.name || "";
@@ -259,28 +274,28 @@ function fillUserMeasurementFields(user) {
 }
 
 function setUserInputState(isExistingMode) {
-  measurementInputs.name.disabled = isExistingMode;
+  measurementInputs.name.disabled = false;
   if (measurementInputs.gender) {
-    measurementInputs.gender.disabled = isExistingMode;
+    measurementInputs.gender.disabled = false;
   }
-  measurementInputs.height_cm.disabled = isExistingMode;
-  measurementInputs.chest_cm.disabled = isExistingMode;
-  measurementInputs.waist_cm.disabled = isExistingMode;
-  measurementInputs.hip_cm.disabled = isExistingMode;
-  measurementInputs.inseam_cm.disabled = isExistingMode;
+  measurementInputs.height_cm.disabled = false;
+  measurementInputs.chest_cm.disabled = false;
+  measurementInputs.waist_cm.disabled = false;
+  measurementInputs.hip_cm.disabled = false;
+  measurementInputs.inseam_cm.disabled = false;
 }
 
 function setClothingInputState(isExistingMode) {
-  displayNameInput.disabled = isExistingMode;
-  categoryGroupSelect.disabled = isExistingMode;
-  categoryTypeSelect.disabled = isExistingMode;
-  runtimeSlotSelect.disabled = isExistingMode;
-  sizeSelect.disabled = isExistingMode;
-  colorSelect.disabled = isExistingMode;
-  renderModeSelect.disabled = isExistingMode;
-  modelPathInput.disabled = isExistingMode;
-  bodyCompatibilityInput.disabled = isExistingMode;
-  runtimeNotesInput.disabled = isExistingMode;
+  displayNameInput.disabled = false;
+  categoryGroupSelect.disabled = false;
+  categoryTypeSelect.disabled = false;
+  runtimeSlotSelect.disabled = false;
+  sizeSelect.disabled = false;
+  colorSelect.disabled = false;
+  renderModeSelect.disabled = false;
+  modelPathInput.disabled = false;
+  bodyCompatibilityInput.disabled = false;
+  runtimeNotesInput.disabled = false;
   clothingFileInput.disabled = isExistingMode;
 }
 
@@ -426,6 +441,8 @@ async function loadUsers() {
   if (usersCache.length > 0 && !existingUserSelect.value) {
     existingUserSelect.value = String(usersCache[0].id);
     fillUserMeasurementFields(usersCache[0]);
+  } else if (usersCache.length === 0) {
+    fillUserMeasurementFields(null);
   }
 }
 
@@ -452,8 +469,223 @@ async function loadClothing(userId = null) {
     existingClothingSelect.value = String(clothingCache[0].id);
     applyClothingToFields(clothingCache[0]);
   } else {
+    existingClothingSelect.value = "";
     imagePathPreviewInput.value = "";
   }
+}
+
+function parseBulkIds(input) {
+  return String(input || "")
+    .split(",")
+    .map((entry) => Number(entry.trim()))
+    .filter((id) => Number.isFinite(id) && id > 0);
+}
+
+function getSelectedUserId() {
+  const userId = Number(existingUserSelect.value);
+  if (!Number.isFinite(userId) || userId <= 0) {
+    throw new Error("Vui lòng chọn user hợp lệ.");
+  }
+  return userId;
+}
+
+function getSelectedClothingId() {
+  const clothingId = Number(existingClothingSelect.value);
+  if (!Number.isFinite(clothingId) || clothingId <= 0) {
+    throw new Error("Vui lòng chọn clothing item hợp lệ.");
+  }
+  return clothingId;
+}
+
+function buildUserUpdatePayload() {
+  const name = String(measurementInputs.name.value || "").trim();
+  if (!name) {
+    throw new Error("Tên user không được để trống.");
+  }
+
+  const gender = String(measurementInputs.gender.value || "male").toLowerCase();
+  if (!["male", "female"].includes(gender)) {
+    throw new Error("Giới tính không hợp lệ.");
+  }
+
+  const payload = {
+    name,
+    gender,
+    height_cm: Number(measurementInputs.height_cm.value),
+    chest_cm: Number(measurementInputs.chest_cm.value),
+    waist_cm: Number(measurementInputs.waist_cm.value),
+    hip_cm: Number(measurementInputs.hip_cm.value),
+    inseam_cm: Number(measurementInputs.inseam_cm.value),
+  };
+
+  for (const [key, value] of Object.entries(payload)) {
+    if (key === "name" || key === "gender") {
+      continue;
+    }
+    if (!Number.isFinite(value)) {
+      throw new Error(`Giá trị ${key} không hợp lệ.`);
+    }
+  }
+  return payload;
+}
+
+function buildClothingUpdatePayload() {
+  const category = composeCategory(categoryGroupSelect.value, categoryTypeSelect.value);
+  const sizeLabel = String(sizeSelect.value || "").toUpperCase();
+  const color = String(colorSelect.value || "").toLowerCase();
+
+  if (!categoryGroupSelect.value || !categoryTypeSelect.value) {
+    throw new Error("Vui lòng chọn category hợp lệ.");
+  }
+  if (!SIZE_OPTIONS.includes(sizeLabel)) {
+    throw new Error("Vui lòng chọn size hợp lệ.");
+  }
+  if (!COLOR_OPTIONS.some((entry) => entry.value === color)) {
+    throw new Error("Vui lòng chọn màu hợp lệ.");
+  }
+
+  return {
+    display_name: String(displayNameInput.value || "").trim() || null,
+    category,
+    slot: runtimeSlotSelect.value || null,
+    size_label: sizeLabel,
+    color,
+    model_path: String(modelPathInput.value || "").trim() || null,
+    render_mode: renderModeSelect.value || "texture",
+    body_compatibility: parseBodyCompatibilityCsv(bodyCompatibilityInput.value),
+    runtime_notes: String(runtimeNotesInput.value || "").trim() || null,
+  };
+}
+
+async function handleEditUser() {
+  const userId = getSelectedUserId();
+  const payload = buildUserUpdatePayload();
+  const updated = await apiJson(`/users/${userId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  log(`Da cap nhat user #${updated.id}.`);
+  await loadUsers();
+  existingUserSelect.value = String(updated.id);
+  fillUserMeasurementFields(updated);
+}
+
+async function handleDeleteUser() {
+  const userId = getSelectedUserId();
+  const preview = await apiJson(`/users/${userId}/delete-preview`, { method: "GET" });
+  const accepted = window.confirm(
+    `${preview.warning}\n\nBan co chac chan muon xoa user nay khong?`,
+  );
+  if (!accepted) {
+    log("Da huy thao tac xoa user.");
+    return;
+  }
+
+  await apiJson(`/users/${userId}?confirm=true`, { method: "DELETE" });
+  log(`Da xoa user #${userId} va du lieu lien quan.`);
+  await loadUsers();
+  const nextUserId = Number(existingUserSelect.value);
+  await loadClothing(Number.isFinite(nextUserId) && nextUserId > 0 ? nextUserId : null);
+}
+
+async function handleBulkDeleteUsers() {
+  const raw = window.prompt("Nhap danh sach user_id can xoa, cach nhau boi dau phay (vi du: 2,5,8)", "");
+  if (raw === null) {
+    return;
+  }
+
+  const ids = parseBulkIds(raw);
+  if (ids.length === 0) {
+    throw new Error("Khong co user_id hop le de xoa.");
+  }
+
+  const preview = await apiJson("/users/bulk-delete-preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids, confirm: false }),
+  });
+  const accepted = window.confirm(`${preview.warning}\n\nBan co chac chan muon tiep tuc?`);
+  if (!accepted) {
+    log("Da huy thao tac xoa nhieu user.");
+    return;
+  }
+
+  const result = await apiJson("/users/bulk-delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids, confirm: true }),
+  });
+  log(
+    `Da xoa ${result.deleted_user_ids.length} user, ${result.deleted_clothing_item_count} clothing item, ${result.deleted_body_measurement_count} body measurement.`,
+  );
+  await loadUsers();
+  const nextUserId = Number(existingUserSelect.value);
+  await loadClothing(Number.isFinite(nextUserId) && nextUserId > 0 ? nextUserId : null);
+}
+
+async function handleEditClothing() {
+  const clothingId = getSelectedClothingId();
+  const userId = getSelectedUserId();
+  const payload = buildClothingUpdatePayload();
+
+  const updated = await apiJson(`/clothing-items/${clothingId}?user_id=${userId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  log(`Da cap nhat clothing item #${updated.id}.`);
+  await loadClothing(userId);
+  existingClothingSelect.value = String(updated.id);
+  applyClothingToFields(updated);
+}
+
+async function handleDeleteClothing() {
+  const clothingId = getSelectedClothingId();
+  const userId = getSelectedUserId();
+  const accepted = window.confirm(`Ban co chac chan muon xoa clothing item #${clothingId} khong?`);
+  if (!accepted) {
+    log("Da huy thao tac xoa clothing item.");
+    return;
+  }
+
+  await apiJson(`/clothing-items/${clothingId}?user_id=${userId}`, { method: "DELETE" });
+  log(`Da xoa clothing item #${clothingId}.`);
+  await loadClothing(userId);
+}
+
+async function handleBulkDeleteClothing() {
+  const userId = getSelectedUserId();
+  const raw = window.prompt(
+    "Nhap danh sach clothing_item_id can xoa, cach nhau boi dau phay (vi du: 11,12,15)",
+    "",
+  );
+  if (raw === null) {
+    return;
+  }
+
+  const ids = parseBulkIds(raw);
+  if (ids.length === 0) {
+    throw new Error("Khong co clothing_item_id hop le de xoa.");
+  }
+
+  const accepted = window.confirm(
+    `Ban sap xoa ${ids.length} clothing item cua user #${userId}. Ban co chac chan?`,
+  );
+  if (!accepted) {
+    log("Da huy thao tac xoa nhieu clothing item.");
+    return;
+  }
+
+  const result = await apiJson(`/clothing-items/bulk-delete?user_id=${userId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids, confirm: true }),
+  });
+  log(`Da xoa ${result.deleted_clothing_item_ids.length} clothing item.`);
+  await loadClothing(userId);
 }
 
 function requireNumber(formData, name, message) {
@@ -716,7 +948,7 @@ async function resolveClothingId(formData, userId) {
   });
 
   log(`Clothing item created: id=${cloth.id}`);
-  await loadClothing();
+  await loadClothing(userId);
   existingClothingSelect.value = String(cloth.id);
   applyClothingToFields(cloth);
   return cloth.id;
@@ -898,6 +1130,54 @@ refreshClothingBtn.addEventListener("click", async () => {
 autoPickClothingBtn.addEventListener("click", async () => {
   try {
     await autoPickClothing();
+  } catch (error) {
+    log(`Error: ${error instanceof Error ? error.message : String(error)}`);
+  }
+});
+
+editUserBtn.addEventListener("click", async () => {
+  try {
+    await handleEditUser();
+  } catch (error) {
+    log(`Error: ${error instanceof Error ? error.message : String(error)}`);
+  }
+});
+
+deleteUserBtn.addEventListener("click", async () => {
+  try {
+    await handleDeleteUser();
+  } catch (error) {
+    log(`Error: ${error instanceof Error ? error.message : String(error)}`);
+  }
+});
+
+bulkDeleteUsersBtn.addEventListener("click", async () => {
+  try {
+    await handleBulkDeleteUsers();
+  } catch (error) {
+    log(`Error: ${error instanceof Error ? error.message : String(error)}`);
+  }
+});
+
+editClothingBtn.addEventListener("click", async () => {
+  try {
+    await handleEditClothing();
+  } catch (error) {
+    log(`Error: ${error instanceof Error ? error.message : String(error)}`);
+  }
+});
+
+deleteClothingBtn.addEventListener("click", async () => {
+  try {
+    await handleDeleteClothing();
+  } catch (error) {
+    log(`Error: ${error instanceof Error ? error.message : String(error)}`);
+  }
+});
+
+bulkDeleteClothingBtn.addEventListener("click", async () => {
+  try {
+    await handleBulkDeleteClothing();
   } catch (error) {
     log(`Error: ${error instanceof Error ? error.message : String(error)}`);
   }
